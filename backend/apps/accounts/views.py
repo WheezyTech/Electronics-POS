@@ -42,7 +42,7 @@ class UserManagementViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ['list', 'create']:
             return [IsStoreManager()]
-        return [IsAdministrator()]
+        return super().get_permissions()
 
     def get_queryset(self):
         queryset = super().get_queryset()

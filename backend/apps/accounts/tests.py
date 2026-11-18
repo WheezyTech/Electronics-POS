@@ -138,3 +138,19 @@ class StoreManagerUserManagementTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 403)
+
+    def test_manager_and_cashier_can_load_their_own_profile(self):
+        cashier = User.objects.create_user(
+            username="cashier",
+            email="cashier@example.com",
+            password="Secure-cashier-password-928!",
+            role=User.Role.CASHIER,
+        )
+
+        for user in (self.manager, cashier):
+            with self.subTest(role=user.role):
+                self.client.force_authenticate(user=user)
+                response = self.client.get(reverse("users-me"))
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.data["role"], user.role)
