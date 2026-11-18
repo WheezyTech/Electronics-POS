@@ -3,7 +3,7 @@ from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 
-from apps.inventory.models import StockBalance, StockLocation
+from apps.inventory.models import StockBalance, StockLocation, StockMovement
 from .models import Brand, Category, Product, ProductBarcode, Unit
 
 
@@ -217,6 +217,101 @@ class ProductLookupTests(TestCase):
             response.data['detail'],
             'This product has no available stock at the selected location.',
         )
+
+
+class ProductOpeningStockTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        manager = get_user_model().objects.create_user(
+            username='product-manager',
+            email='product-manager@example.com',
+            password='test-password',
+            role='STORE_MANAGER',
+        )
+        self.client.force_authenticate(user=manager)
+        self.location = StockLocation.objects.create(
+            name='Main shop',
+            code='MAIN',
+            is_default=True,
+        )
+        self.category = Category.objects.create(name='Electronics')
+        self.unit = Unit.objects.create(name='Piece', abbreviation='pc')
+        self.payload = {
+            'name': 'New phone',
+            'sku': 'NEW-PHONE',
+            'category': self.category.id,
+            'unit': self.unit.id,
+            'cost_price': '100.00',
+            'selling_price': '150.00',
+        }
+
+    def test_create_product_with_opening_stock_records_adjustment(self):
+        response = self.client.post(
+            reverse('products-list'),
+            {
+                **self.payload,
+                'opening_stock': '12.500',
+                'opening_stock_location': self.location.id,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        product = Product.objects.get(sku='NEW-PHONE')
+        balance = StockBalance.objects.get(
+            product=product,
+            location=self.location,
+        )
+        movement = StockMovement.objects.get(balance=balance)
+        self.assertEqual(balance.quantity_on_hand, 12.5)
+        self.assertEqual(
+            movement.movement_type,
+            StockMovement.MovementType.ADJUSTMENT,
+        )
+        self.assertEqual(movement.reference, 'OPENING')
+
+    def test_opening_stock_requires_a_location_and_does_not_create_product(self):
+        response = self.client.post(
+            reverse('products-list'),
+            {**self.payload, 'opening_stock': '3'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('opening_stock_location', response.data)
+        self.assertFalse(Product.objects.filter(sku='NEW-PHONE').exists())
+
+    def test_create_without_opening_stock_does_not_create_a_stock_balance(self):
+        response = self.client.post(
+            reverse('products-list'),
+            {
+                **self.payload,
+                'opening_stock': '0',
+                'opening_stock_location': None,
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        product = Product.objects.get(sku='NEW-PHONE')
+        self.assertFalse(StockBalance.objects.filter(product=product).exists())
+        self.assertFalse(
+            StockMovement.objects.filter(balance__product=product).exists()
+        )
+
+    def test_opening_stock_is_rolled_back_for_inactive_product(self):
+        response = self.client.post(
+            reverse('products-list'),
+            {
+                **self.payload,
+                'is_active': False,
+                'opening_stock': '3',
+                'opening_stock_location': self.location.id,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Product.objects.filter(sku='NEW-PHONE').exists())
 
 
 class StoreManagerCatalogAccessTests(TestCase):

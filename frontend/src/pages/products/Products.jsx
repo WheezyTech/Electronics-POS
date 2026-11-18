@@ -23,6 +23,25 @@ const emptyForm = {
   is_active: true,
 };
 
+const getList = (data) =>
+  Array.isArray(data) ? data : data?.results || [];
+
+async function fetchProductData() {
+  const [productRes, categoryRes, brandRes, unitRes] = await Promise.all([
+    api.get("/products/products/"),
+    api.get("/products/categories/"),
+    api.get("/products/brands/"),
+    api.get("/products/units/"),
+  ]);
+
+  return {
+    products: getList(productRes.data),
+    categories: getList(categoryRes.data),
+    brands: getList(brandRes.data),
+    units: getList(unitRes.data),
+  };
+}
+
 function Field({ label, children, required = false }) {
   return (
     <label className="block">
@@ -39,35 +58,28 @@ export default function Products() {
   const [categories, setCategories] = useState([]);
   const [brands, setBrands] = useState([]);
   const [units, setUnits] = useState([]);
+  const [locations, setLocations] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [locationError, setLocationError] = useState("");
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [openingStock, setOpeningStock] = useState("");
+  const [openingStockLocation, setOpeningStockLocation] = useState("");
 
   const loadData = async () => {
     try {
       setLoading(true);
       setError("");
-
-      const [productRes, categoryRes, brandRes, unitRes] =
-        await Promise.all([
-          api.get("/products/products/"),
-          api.get("/products/categories/"),
-          api.get("/products/brands/"),
-          api.get("/products/units/"),
-        ]);
-
-      const getList = (data) =>
-        Array.isArray(data) ? data : data.results || [];
-
-      setProducts(getList(productRes.data));
-      setCategories(getList(categoryRes.data));
-      setBrands(getList(brandRes.data));
-      setUnits(getList(unitRes.data));
+      const data = await fetchProductData();
+      setProducts(data.products);
+      setCategories(data.categories);
+      setBrands(data.brands);
+      setUnits(data.units);
     } catch (err) {
       setError(
         err.response?.data?.detail ||
@@ -79,7 +91,61 @@ export default function Products() {
   };
 
   useEffect(() => {
-    loadData();
+    let active = true;
+    fetchProductData()
+      .then((data) => {
+        if (!active) return;
+        setProducts(data.products);
+        setCategories(data.categories);
+        setBrands(data.brands);
+        setUnits(data.units);
+      })
+      .catch((err) => {
+        if (active) {
+          setError(
+            err.response?.data?.detail ||
+            "Unable to load product information."
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    api.get("/inventory/locations/")
+      .then((response) => {
+        if (!active) return;
+        const activeLocations = getList(response.data).filter(
+          (location) => location.is_active
+        );
+        setLocations(activeLocations);
+        const defaultLocation =
+          activeLocations.find((location) => location.is_default) ||
+          activeLocations[0];
+        if (defaultLocation) {
+          setOpeningStockLocation((current) =>
+            current || String(defaultLocation.id)
+          );
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setLocationError(
+            "Stock locations could not be loaded. Opening stock cannot be recorded until a location is available."
+          );
+        }
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const filteredProducts = products.filter((product) => {
@@ -102,6 +168,10 @@ export default function Products() {
   const openAddForm = () => {
     setEditingProduct(null);
     setForm(emptyForm);
+    setOpeningStock("");
+    const defaultLocation =
+      locations.find((location) => location.is_default) || locations[0];
+    setOpeningStockLocation(String(defaultLocation?.id || ""));
     setError("");
     setShowForm(true);
   };
@@ -115,6 +185,7 @@ export default function Products() {
       brand: product.brand?.id || product.brand || "",
       unit: product.unit?.id || product.unit || "",
     });
+    setOpeningStock("");
     setError("");
     setShowForm(true);
   };
@@ -149,6 +220,7 @@ export default function Products() {
         warranty_months: Number(form.warranty_months || 0),
         reorder_level: Number(form.reorder_level || 0),
       };
+      const openingQuantity = Number(openingStock || 0);
 
       if (editingProduct) {
         await api.patch(
@@ -156,7 +228,26 @@ export default function Products() {
           payload
         );
       } else {
-        await api.post("/products/products/", payload);
+        if (!Number.isFinite(openingQuantity) || openingQuantity < 0) {
+          setError("Enter a valid opening stock quantity.");
+          return;
+        }
+
+        if (openingQuantity > 0 && !openingStockLocation) {
+          setError(
+            locationError ||
+            "Select a stock location to record opening stock."
+          );
+          return;
+        }
+
+        await api.post("/products/products/", {
+          ...payload,
+          opening_stock: openingQuantity,
+          opening_stock_location: openingQuantity > 0
+            ? Number(openingStockLocation)
+            : null,
+        });
       }
 
       setShowForm(false);
@@ -166,7 +257,7 @@ export default function Products() {
     } catch (err) {
       const data = err.response?.data;
       setError(
-        typeof data === "object"
+        data && typeof data === "object"
           ? Object.entries(data)
               .map(([key, value]) =>
                 `${key}: ${Array.isArray(value) ? value.join(", ") : value}`
@@ -529,6 +620,53 @@ export default function Products() {
                   />
                 </Field>
               </div>
+
+              {!editingProduct && (
+                <section className="space-y-4 rounded-lg border border-blue-100 bg-blue-50/50 p-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-800">
+                      Opening Stock
+                    </h3>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Optionally record stock already on hand at one location.
+                      This creates an opening stock adjustment.
+                    </p>
+                  </div>
+                  {locationError && locations.length === 0 && (
+                    <p className="text-sm text-red-600">{locationError}</p>
+                  )}
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <Field label="Opening Stock Quantity">
+                      <input
+                        min="0"
+                        step="0.001"
+                        type="number"
+                        className={inputClass}
+                        value={openingStock}
+                        onChange={(e) => setOpeningStock(e.target.value)}
+                        placeholder="Leave blank if none"
+                      />
+                    </Field>
+                    <Field label="Stock Location" required={Number(openingStock) > 0}>
+                      <select
+                        required={Number(openingStock) > 0}
+                        className={inputClass}
+                        value={openingStockLocation}
+                        onChange={(e) =>
+                          setOpeningStockLocation(e.target.value)
+                        }
+                      >
+                        <option value="">Select location</option>
+                        {locations.map((location) => (
+                          <option key={location.id} value={location.id}>
+                            {location.name}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                </section>
+              )}
 
               <Field label="Description">
                 <textarea

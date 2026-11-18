@@ -191,6 +191,75 @@ function SalesChart({ data }) {
   );
 }
 
+function HorizontalBarChart({
+  data,
+  labelKey,
+  valueKey,
+  chartLabel,
+  formatValue = number,
+  secondaryValueKey,
+  formatSecondaryValue,
+  emptyMessage,
+  barColor = "bg-blue-500",
+}) {
+  if (!data.length) {
+    return (
+      <div className="grid min-h-40 place-items-center text-center text-sm text-slate-400">
+        {emptyMessage}
+      </div>
+    );
+  }
+
+  const maximum = Math.max(
+    0,
+    ...data.map((item) => Number(item[valueKey] || 0))
+  );
+
+  return (
+    <div
+      className="space-y-4"
+      role="group"
+      aria-label={chartLabel}
+    >
+      {data.map((item) => {
+        const value = Number(item[valueKey] || 0);
+        const width = maximum > 0 && value > 0
+          ? Math.max(3, (value / maximum) * 100)
+          : 0;
+        const key =
+          item.product_id ??
+          item.cashier_id ??
+          item.payment_method ??
+          item[labelKey];
+
+        return (
+          <div key={key}>
+            <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
+              <span className="truncate font-medium text-slate-700">
+                {item[labelKey] || "Unknown"}
+              </span>
+              <span className="shrink-0 font-semibold text-slate-600">
+                {formatValue(value)}
+              </span>
+            </div>
+            {secondaryValueKey && (
+              <p className="mb-1.5 -mt-1 text-[11px] text-slate-500">
+                Revenue: {formatSecondaryValue(item[secondaryValueKey])}
+              </p>
+            )}
+            <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className={`h-full rounded-full ${barColor}`}
+                style={{ width: `${width}%` }}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -395,6 +464,8 @@ export default function Dashboard() {
   const sales = report?.sales || {};
   const dailySales = report?.daily_sales || [];
   const topProducts = report?.top_products || [];
+  const paymentBreakdown = report?.payment_breakdown || [];
+  const cashierPerformance = report?.cashier_performance || [];
   const todaySales = Number(
     todayReport?.sales?.revenue ??
     dailySales.find((item) => item.date === todayKey)?.revenue ??
@@ -902,25 +973,18 @@ export default function Dashboard() {
                 </Link>
               </div>
               {topProducts.length ? (
-                <div className="divide-y divide-slate-100 px-5">
-                  {topProducts.slice(0, 5).map((product) => (
-                    <div key={product.product_id} className="flex items-center gap-3 py-3">
-                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-slate-50 text-slate-500">
-                        <Package size={17} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-slate-800">
-                          {product.name}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {number(product.quantity_sold)} sold
-                        </p>
-                      </div>
-                      <p className="shrink-0 text-sm font-semibold text-slate-800">
-                        {money(product.revenue)}
-                      </p>
-                    </div>
-                  ))}
+                <div className="p-5">
+                  <HorizontalBarChart
+                    data={topProducts.slice(0, 5)}
+                    labelKey="name"
+                    valueKey="quantity_sold"
+                    chartLabel="Top selling products by quantity"
+                    formatValue={(value) => `${number(value)} sold`}
+                    secondaryValueKey="revenue"
+                    formatSecondaryValue={money}
+                    emptyMessage="No product sales recorded for this period."
+                    barColor="bg-violet-500"
+                  />
                 </div>
               ) : (
                 <p className="p-6 text-center text-sm text-slate-500">
@@ -929,6 +993,44 @@ export default function Dashboard() {
               )}
             </article>
           </div>
+        </section>
+
+        <section className="grid gap-5 lg:grid-cols-2">
+          <article className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+            <div className="mb-5">
+              <h2 className="font-bold text-slate-900">Payment Methods</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Amount collected by payment type
+              </p>
+            </div>
+            <HorizontalBarChart
+              data={paymentBreakdown}
+              labelKey="payment_method"
+              valueKey="collected"
+              chartLabel="Collected sales by payment method"
+              formatValue={money}
+              emptyMessage="No payments recorded for this period."
+              barColor="bg-emerald-500"
+            />
+          </article>
+
+          <article className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+            <div className="mb-5">
+              <h2 className="font-bold text-slate-900">Cashier Performance</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Completed sales revenue by cashier
+              </p>
+            </div>
+            <HorizontalBarChart
+              data={cashierPerformance.slice(0, 5)}
+              labelKey="cashier"
+              valueKey="revenue"
+              chartLabel="Sales revenue by cashier"
+              formatValue={money}
+              emptyMessage="No cashier sales recorded for this period."
+              barColor="bg-amber-500"
+            />
+          </article>
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">

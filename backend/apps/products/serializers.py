@@ -1,6 +1,12 @@
 
+from decimal import Decimal
+
+from django.db import transaction
+
 from rest_framework import serializers
 
+from apps.inventory.models import StockLocation, StockMovement
+from apps.inventory.services import change_stock
 from .models import (
     Category,
     Brand,
@@ -46,6 +52,21 @@ class ProductBarcodeSerializer(serializers.ModelSerializer):
 
 
 class ProductSerializer(serializers.ModelSerializer):
+    opening_stock = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=3,
+        min_value=Decimal('0'),
+        required=False,
+        default=Decimal('0'),
+        write_only=True,
+    )
+    opening_stock_location = serializers.PrimaryKeyRelatedField(
+        queryset=StockLocation.objects.filter(is_active=True),
+        required=False,
+        allow_null=True,
+        write_only=True,
+    )
+
     location_quantity_available = serializers.DecimalField(
         max_digits=14,
         decimal_places=3,
@@ -102,6 +123,8 @@ class ProductSerializer(serializers.ModelSerializer):
             'created_by',
             'created_at',
             'updated_at',
+            'opening_stock',
+            'opening_stock_location',
         ]
 
         read_only_fields = [
@@ -112,6 +135,34 @@ class ProductSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, attrs):
+        if self.instance and {
+            'opening_stock',
+            'opening_stock_location',
+        }.intersection(self.initial_data):
+            raise serializers.ValidationError({
+                'opening_stock':
+                    'Opening stock can only be recorded when creating a product.'
+            })
+
+        opening_stock = attrs.get('opening_stock', Decimal('0'))
+        opening_stock_location = attrs.get('opening_stock_location')
+        is_active = attrs.get(
+            'is_active',
+            getattr(self.instance, 'is_active', True),
+        )
+
+        if opening_stock > 0 and not opening_stock_location:
+            raise serializers.ValidationError({
+                'opening_stock_location':
+                    'Select a stock location when entering opening stock.'
+            })
+
+        if opening_stock > 0 and not is_active:
+            raise serializers.ValidationError({
+                'opening_stock':
+                    'Opening stock can only be recorded for an active product.'
+            })
+
         selling_price = attrs.get(
             'selling_price',
             getattr(self.instance, 'selling_price', None)
@@ -148,3 +199,22 @@ class ProductSerializer(serializers.ModelSerializer):
             })
 
         return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        opening_stock = validated_data.pop('opening_stock', Decimal('0'))
+        location = validated_data.pop('opening_stock_location', None)
+        product = super().create(validated_data)
+
+        if opening_stock > 0:
+            change_stock(
+                product=product,
+                location=location,
+                quantity_delta=opening_stock,
+                movement_type=StockMovement.MovementType.ADJUSTMENT,
+                user=product.created_by,
+                reference='OPENING',
+                notes='Opening stock entered manually during product creation.',
+            )
+
+        return product
