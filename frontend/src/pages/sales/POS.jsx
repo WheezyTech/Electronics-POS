@@ -265,6 +265,13 @@ export default function POS() {
   const [pendingMpesaSaleId, setPendingMpesaSaleId] = useState("");
   const [mpesaStatus, setMpesaStatus] = useState("");
 
+  useEffect(() => {
+    if (!receipt) return undefined;
+
+    const printTimer = window.setTimeout(() => window.print(), 250);
+    return () => window.clearTimeout(printTimer);
+  }, [receipt]);
+
   const buildReceipt = (sale, method, reference = "N/A") => {
     setReceipt({
       reference: sale.reference || sale.id || "N/A",
@@ -816,75 +823,149 @@ export default function POS() {
       </div>
 
       {receipt && (
-        <div className="print-only mx-auto mt-6 max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="text-center">
-            <h2 className="text-2xl font-extrabold tracking-wide">
-              ELECTRONICS POS
-            </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Sales Receipt
-            </p>
+        <>
+          <div className="print-only mx-auto mt-6 max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="text-center">
+              <h2 className="text-2xl font-extrabold tracking-wide">
+                ELECTRONICS POS
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Sales Receipt
+              </p>
+              <div className="my-4 border-t border-dashed border-slate-400" />
+            </div>
+
+            <div className="space-y-1 text-sm">
+              <p><strong>Receipt No:</strong> {receipt.reference}</p>
+              <p><strong>Date:</strong> {receipt.date}</p>
+              <p><strong>Customer:</strong> {receipt.customerName}</p>
+              <p><strong>Phone:</strong> {receipt.customerPhone}</p>
+            </div>
+
             <div className="my-4 border-t border-dashed border-slate-400" />
-          </div>
 
-          <div className="space-y-1 text-sm">
-            <p><strong>Receipt No:</strong> {receipt.reference}</p>
-            <p><strong>Date:</strong> {receipt.date}</p>
-            <p><strong>Customer:</strong> {receipt.customerName}</p>
-            <p><strong>Phone:</strong> {receipt.customerPhone}</p>
-          </div>
-
-          <div className="my-4 border-t border-dashed border-slate-400" />
-
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left">
-                <th className="py-2">Item</th>
-                <th className="py-2 text-center">Qty</th>
-                <th className="py-2 text-right">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {receipt.items.map((item) => (
-                <tr key={item.id} className="border-b border-slate-100">
-                  <td className="py-2">{item.name}</td>
-                  <td className="py-2 text-center">{item.quantity}</td>
-                  <td className="py-2 text-right">
-                    {(
-                      item.price * item.quantity -
-                      Number(item.discountAmount || 0)
-                    ).toLocaleString()}
-                  </td>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left">
+                  <th className="py-2">Item</th>
+                  <th className="py-2 text-center">Qty</th>
+                  <th className="py-2 text-right">Amount</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {receipt.items.map((item) => (
+                  <tr key={item.id} className="border-b border-slate-100">
+                    <td className="py-2">{item.name}</td>
+                    <td className="py-2 text-center">{item.quantity}</td>
+                    <td className="py-2 text-right">
+                      {(
+                        item.price * item.quantity -
+                        Number(item.discountAmount || 0)
+                      ).toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
 
-          <div className="my-4 border-t border-dashed border-slate-400" />
+            <div className="my-4 border-t border-dashed border-slate-400" />
 
-          <div className="flex justify-between text-lg font-bold">
-            <span>TOTAL</span>
-            <span>KSh {receipt.total.toLocaleString()}</span>
+            <div className="flex justify-between text-lg font-bold">
+              <span>TOTAL</span>
+              <span>KSh {receipt.total.toLocaleString()}</span>
+            </div>
+
+            <div className="mt-4 space-y-1 text-sm">
+              <p><strong>Payment:</strong> {receipt.paymentMethod}</p>
+              <p><strong>Transaction / M-Pesa receipt:</strong> {receipt.paymentReference}</p>
+            </div>
+
+            <div className="my-4 border-t border-dashed border-slate-400" />
+
+            <p className="text-center text-sm font-medium">
+              Thank you for shopping with us!
+            </p>
           </div>
 
-          <div className="mt-4 space-y-1 text-sm">
-            <p><strong>Payment:</strong> {receipt.paymentMethod}</p>
-            <p><strong>Transaction / M-Pesa receipt:</strong> {receipt.paymentReference}</p>
-          </div>
-
-          <div className="my-4 border-t border-dashed border-slate-400" />
-
-          <p className="text-center text-sm font-medium">
-            Thank you for shopping with us!
-          </p>
-
-          <button
-            onClick={() => window.print()}
-            className="no-print mt-5 w-full rounded-lg bg-blue-600 py-3 font-semibold text-white hover:bg-blue-700"
+          <div
+            className="no-print fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="completed-receipt-title"
           >
-            Print Receipt
-          </button>
-        </div>
+            <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white shadow-xl">
+              <div className="flex items-center justify-between border-b p-5">
+                <div>
+                  <h2
+                    id="completed-receipt-title"
+                    className="text-lg font-bold"
+                  >
+                    Sale complete — receipt ready
+                  </h2>
+                  <p className="text-sm text-slate-500">
+                    Receipt {receipt.reference}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReceipt(null)}
+                  className="rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="space-y-3 p-5">
+                <div className="flex justify-between text-sm">
+                  <span>{receipt.customerName}</span>
+                  <span>{receipt.date}</span>
+                </div>
+                <div className="divide-y rounded-lg border">
+                  {receipt.items.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex justify-between gap-4 p-3 text-sm"
+                    >
+                      <span>
+                        {item.name} × {item.quantity}
+                      </span>
+                      <span>
+                        KSh {(
+                          item.price * item.quantity -
+                          Number(item.discountAmount || 0)
+                        ).toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-between border-t pt-3 font-bold">
+                  <span>Total</span>
+                  <span>KSh {receipt.total.toLocaleString()}</span>
+                </div>
+                <p className="text-sm text-slate-500">
+                  Payment: {receipt.paymentMethod} · Ref: {receipt.paymentReference}
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-3 border-t p-5">
+                <button
+                  type="button"
+                  onClick={() => setReceipt(null)}
+                  className="rounded-lg border px-4 py-2.5 text-sm font-medium hover:bg-slate-50"
+                >
+                  Done
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+                >
+                  Print receipt
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
