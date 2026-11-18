@@ -66,13 +66,19 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-CORS_ALLOWED_ORIGINS = [
-    # React development
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.getenv(
+        "ALLOWED_HOSTS",
+        "localhost,127.0.0.1,192.168.1.165,electronics-pos-production.up.railway.app"
+    ).split(",")
+    if host.strip()
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://electronics-pos-production.up.railway.app",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-
-    # Packaged Electron application loaded through file://
-    "null",
 ]
 
 ROOT_URLCONF = 'config.urls'
