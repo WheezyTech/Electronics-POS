@@ -24,6 +24,9 @@ export default function POS() {
 
   const [products, setProducts] = useState([]);
   const [locations, setLocations] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [brands, setBrands] = useState([]);
+  const [units, setUnits] = useState([]);
   const [location, setLocation] = useState(
     routeLocation.state?.initialLocation
       ? String(routeLocation.state.initialLocation)
@@ -39,6 +42,12 @@ export default function POS() {
       : []
   );
   const [search, setSearch] = useState("");
+  const [skuFilter, setSkuFilter] = useState("");
+  const [modelFilter, setModelFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [brandFilter, setBrandFilter] = useState("");
+  const [unitFilter, setUnitFilter] = useState("");
+  const [inStockOnly, setInStockOnly] = useState(true);
   const [barcode, setBarcode] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -85,6 +94,26 @@ export default function POS() {
       })
       .catch(() => setError("Unable to load stock locations."));
   }, [draftSaleId]);
+
+  useEffect(() => {
+    Promise.all([
+      api.get("/products/categories/"),
+      api.get("/products/brands/"),
+      api.get("/products/units/"),
+    ])
+      .then(([categoryResponse, brandResponse, unitResponse]) => {
+        setCategories(
+          getList(categoryResponse.data).filter((item) => item.is_active)
+        );
+        setBrands(
+          getList(brandResponse.data).filter((item) => item.is_active)
+        );
+        setUnits(
+          getList(unitResponse.data).filter((item) => item.is_active)
+        );
+      })
+      .catch(() => setError("Unable to load product filters."));
+  }, []);
 
   useEffect(() => {
     if (!Array.isArray(initialCart) || !initialCart.length) return;
@@ -142,25 +171,67 @@ export default function POS() {
   }, [draftSaleId]);
 
   useEffect(() => {
+    let active = true;
     const timer = setTimeout(() => {
-      if (!search.trim() || !location) {
+      const hasFilters = [
+        search,
+        skuFilter,
+        modelFilter,
+        categoryFilter,
+        brandFilter,
+        unitFilter,
+      ].some((value) => value.trim());
+
+      if (!hasFilters || !location) {
         setProducts([]);
         return;
       }
 
+      const params = {
+        location,
+        in_stock: inStockOnly,
+      };
+      if (search.trim()) params.search = search.trim();
+      if (skuFilter.trim()) params.sku = skuFilter.trim();
+      if (modelFilter.trim()) params.model_number = modelFilter.trim();
+      if (categoryFilter) params.category = categoryFilter;
+      if (brandFilter) params.brand = brandFilter;
+      if (unitFilter) params.unit = unitFilter;
+
       api.get("/products/products/", {
-        params: { search: search.trim(), location }
+        params
       })
-        .then((response) => setProducts(getList(response.data)))
-        .catch(() => setError("Unable to search products."));
+        .then((response) => {
+          if (active) setProducts(getList(response.data));
+        })
+        .catch(() => {
+          if (active) setError("Unable to search products.");
+        });
     }, 300);
 
-    return () => clearTimeout(timer);
-  }, [search, location]);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [
+    search,
+    skuFilter,
+    modelFilter,
+    categoryFilter,
+    brandFilter,
+    unitFilter,
+    inStockOnly,
+    location,
+  ]);
 
   const addProduct = (product) => {
     if (!product?.id) {
       setError("The product response is missing its ID.");
+      return;
+    }
+
+    if (Number(product.location_quantity_available || 0) <= 0) {
+      setError("This product has no available stock at the selected location.");
       return;
     }
 
@@ -274,6 +345,12 @@ export default function POS() {
     setCustomerPhone("");
     setPaymentReference("");
     setSearch("");
+    setSkuFilter("");
+    setModelFilter("");
+    setCategoryFilter("");
+    setBrandFilter("");
+    setUnitFilter("");
+    setInStockOnly(true);
     setProducts([]);
     setPendingMpesaTransactionId("");
     setPendingMpesaSaleId("");
@@ -613,12 +690,86 @@ export default function POS() {
                 className="w-full rounded-lg border border-slate-300 py-3 pl-10 pr-3"
               />
             </div>
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <select
+                value={categoryFilter}
+                onChange={(event) => setCategoryFilter(event.target.value)}
+                disabled={loading || isLoadingDraft}
+                className="w-full rounded-lg border border-slate-300 p-3"
+                aria-label="Filter by category"
+              >
+                <option value="">All categories</option>
+                {categories.map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
+                ))}
+              </select>
+              <select
+                value={unitFilter}
+                onChange={(event) => setUnitFilter(event.target.value)}
+                disabled={loading || isLoadingDraft}
+                className="w-full rounded-lg border border-slate-300 p-3"
+                aria-label="Filter by unit"
+              >
+                <option value="">All units</option>
+                {units.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name} ({item.abbreviation})
+                  </option>
+                ))}
+              </select>
+              <select
+                value={brandFilter}
+                onChange={(event) => setBrandFilter(event.target.value)}
+                disabled={loading || isLoadingDraft}
+                className="w-full rounded-lg border border-slate-300 p-3"
+                aria-label="Filter by brand"
+              >
+                <option value="">All brands</option>
+                {brands.map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
+                ))}
+              </select>
+              <input
+                value={modelFilter}
+                onChange={(event) => setModelFilter(event.target.value)}
+                disabled={loading || isLoadingDraft}
+                placeholder="Filter by model..."
+                aria-label="Filter by model"
+                className="w-full rounded-lg border border-slate-300 p-3"
+              />
+              <input
+                value={skuFilter}
+                onChange={(event) => setSkuFilter(event.target.value)}
+                disabled={loading || isLoadingDraft}
+                placeholder="Filter by SKU..."
+                aria-label="Filter by SKU"
+                className="w-full rounded-lg border border-slate-300 p-3"
+              />
+              <label className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={inStockOnly}
+                  onChange={(event) => setInStockOnly(event.target.checked)}
+                  disabled={loading || isLoadingDraft}
+                  className="h-4 w-4"
+                />
+                In-stock items only
+              </label>
+            </div>
           </div>
 
-          {location && search.trim() && products.length === 0 && (
+          {location &&
+            (search.trim() ||
+              skuFilter.trim() ||
+              modelFilter.trim() ||
+              categoryFilter ||
+              brandFilter ||
+              unitFilter) &&
+            products.length === 0 && (
             <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">
-              No products with available stock were found at this location.
-              Receive stock for this location in Inventory.
+              {inStockOnly
+                ? "No products with available stock match these filters."
+                : "No products match these filters."}
             </p>
           )}
 
@@ -627,7 +778,11 @@ export default function POS() {
               <button
                 key={product.id}
                 onClick={() => addProduct(product)}
-                disabled={loading || isLoadingDraft}
+                disabled={
+                  loading ||
+                  isLoadingDraft ||
+                  Number(product.location_quantity_available || 0) <= 0
+                }
                 className="rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-blue-400 hover:shadow"
               >
                 <h3 className="font-semibold text-slate-800">{product.name}</h3>
@@ -641,7 +796,11 @@ export default function POS() {
                   KSh {Number(product.selling_price || 0).toLocaleString()}
                 </p>
                 <span className="mt-3 inline-flex items-center gap-1 text-sm text-blue-600">
-                  <Plus size={16} /> Add to cart
+                  {Number(product.location_quantity_available || 0) > 0 ? (
+                    <><Plus size={16} /> Add to cart</>
+                  ) : (
+                    "Out of stock"
+                  )}
                 </span>
               </button>
             ))}

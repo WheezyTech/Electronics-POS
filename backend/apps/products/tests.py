@@ -4,7 +4,7 @@ from django.urls import reverse
 from rest_framework.test import APIClient
 
 from apps.inventory.models import StockBalance, StockLocation
-from .models import Category, Product, ProductBarcode, Unit
+from .models import Brand, Category, Product, ProductBarcode, Unit
 
 
 class ProductLookupTests(TestCase):
@@ -20,11 +20,21 @@ class ProductLookupTests(TestCase):
         self.category = Category.objects.create(name='Test category')
         self.unit = Unit.objects.create(name='Each', abbreviation='ea')
 
-    def create_product(self, *, name, sku, is_active=True):
+    def create_product(
+        self,
+        *,
+        name,
+        sku,
+        is_active=True,
+        brand=None,
+        model_number='',
+    ):
         return Product.objects.create(
             name=name,
             sku=sku,
             category=self.category,
+            brand=brand,
+            model_number=model_number,
             unit=self.unit,
             cost_price='1.00',
             selling_price='2.00',
@@ -103,6 +113,84 @@ class ProductLookupTests(TestCase):
         self.assertEqual(
             response.data[0]['location_quantity_available'],
             '4.000',
+        )
+
+    def test_product_filters_can_find_stocked_and_unstocked_items(self):
+        location = StockLocation.objects.create(
+            name='Test store',
+            code='TEST-STORE',
+        )
+        brand = Brand.objects.create(name='Test brand')
+        matching_product = self.create_product(
+            name='Matching product',
+            sku='MATCH-SKU',
+            brand=brand,
+            model_number='MODEL-200',
+        )
+        self.create_product(
+            name='Other product',
+            sku='OTHER-SKU',
+            model_number='MODEL-100',
+        )
+        StockBalance.objects.create(
+            product=matching_product,
+            location=location,
+            quantity_on_hand='2.000',
+            quantity_reserved='0.000',
+        )
+
+        filters = {
+            'location': location.id,
+            'category': self.category.id,
+            'unit': self.unit.id,
+            'brand': brand.id,
+            'sku': 'match',
+            'model_number': '200',
+        }
+        in_stock_response = self.client.get(
+            reverse('products-list'),
+            filters,
+        )
+        all_products_response = self.client.get(
+            reverse('products-list'),
+            {**filters, 'in_stock': 'false'},
+        )
+
+        self.assertEqual(in_stock_response.status_code, 200)
+        self.assertEqual(
+            [item['id'] for item in in_stock_response.data],
+            [matching_product.id],
+        )
+        self.assertEqual(all_products_response.status_code, 200)
+        self.assertEqual(
+            [item['id'] for item in all_products_response.data],
+            [matching_product.id],
+        )
+        self.assertEqual(
+            all_products_response.data[0]['location_quantity_available'],
+            '2.000',
+        )
+
+    def test_all_products_filter_includes_items_without_location_stock(self):
+        location = StockLocation.objects.create(
+            name='Test store',
+            code='TEST-STORE',
+        )
+        product = self.create_product(
+            name='Unstocked product',
+            sku='UNSTOCKED-SKU',
+        )
+
+        response = self.client.get(
+            reverse('products-list'),
+            {'location': location.id, 'in_stock': 'false'},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item['id'] for item in response.data], [product.id])
+        self.assertEqual(
+            response.data[0]['location_quantity_available'],
+            '0.000',
         )
 
     def test_barcode_lookup_requires_stock_at_selected_location(self):

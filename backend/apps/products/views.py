@@ -1,5 +1,14 @@
 
-from django.db.models import DecimalField, ExpressionWrapper, F, Q
+from django.db.models import (
+    DecimalField,
+    ExpressionWrapper,
+    F,
+    OuterRef,
+    Q,
+    Subquery,
+    Value,
+)
+from django.db.models.functions import Coalesce
 
 from rest_framework import viewsets, filters
 from rest_framework.decorators import action
@@ -24,7 +33,7 @@ from .serializers import (
 )
 
 from .permissions import ProductAccessPermission
-from apps.inventory.models import StockLocation
+from apps.inventory.models import StockBalance, StockLocation
 
 
 def get_active_location_id(location_value):
@@ -116,31 +125,101 @@ class ProductViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
         location = self.request.query_params.get('location')
 
-        if not location:
-            return queryset
+        if location:
+            location_id = get_active_location_id(location)
+            in_stock = self.request.query_params.get('in_stock', 'true')
 
-        location_id = get_active_location_id(location)
-        available_quantity = ExpressionWrapper(
-            F('stock_balances__quantity_on_hand')
-            - F('stock_balances__quantity_reserved'),
-            output_field=DecimalField(
-                max_digits=14,
-                decimal_places=3,
-            ),
-        )
+            if in_stock.lower() not in ('true', 'false', '1', '0'):
+                raise ValidationError({
+                    'in_stock': 'Use true or false for the stock filter.'
+                })
 
-        return (
-            queryset.filter(
-                is_active=True,
-                stock_balances__location_id=location_id,
-                stock_balances__quantity_on_hand__gt=F(
-                    'stock_balances__quantity_reserved'
+            available_quantity = ExpressionWrapper(
+                F('stock_balances__quantity_on_hand')
+                - F('stock_balances__quantity_reserved'),
+                output_field=DecimalField(
+                    max_digits=14,
+                    decimal_places=3,
                 ),
             )
-            .annotate(
-                location_quantity_available=available_quantity
+            queryset = queryset.filter(is_active=True)
+
+            if in_stock.lower() in ('true', '1'):
+                queryset = queryset.filter(
+                    stock_balances__location_id=location_id,
+                    stock_balances__quantity_on_hand__gt=F(
+                        'stock_balances__quantity_reserved'
+                    ),
+                ).annotate(
+                    location_quantity_available=available_quantity
+                )
+            else:
+                available_balance = (
+                    StockBalance.objects.filter(
+                        product_id=OuterRef('pk'),
+                        location_id=location_id,
+                    )
+                    .annotate(
+                        available=ExpressionWrapper(
+                            F('quantity_on_hand') - F('quantity_reserved'),
+                            output_field=DecimalField(
+                                max_digits=14,
+                                decimal_places=3,
+                            ),
+                        )
+                    )
+                    .values('available')[:1]
+                )
+                queryset = queryset.annotate(
+                    location_quantity_available=Coalesce(
+                        Subquery(
+                            available_balance,
+                            output_field=DecimalField(
+                                max_digits=14,
+                                decimal_places=3,
+                            ),
+                        ),
+                        Value(
+                            0,
+                            output_field=DecimalField(
+                                max_digits=14,
+                                decimal_places=3,
+                            ),
+                        ),
+                    )
+                )
+
+        for field in ('category', 'unit', 'brand'):
+            value = self.request.query_params.get(field)
+            if value:
+                try:
+                    filter_id = int(value)
+                except (TypeError, ValueError):
+                    raise ValidationError({
+                        field: 'Select a valid filter option.'
+                    })
+                if filter_id <= 0:
+                    raise ValidationError({
+                        field: 'Select a valid filter option.'
+                    })
+                queryset = queryset.filter(
+                    **{f'{field}_id': filter_id}
+                )
+
+        sku = self.request.query_params.get('sku', '').strip()
+        if sku:
+            queryset = queryset.filter(sku__icontains=sku)
+
+        model_number = self.request.query_params.get(
+            'model_number',
+            '',
+        ).strip()
+        if model_number:
+            queryset = queryset.filter(
+                model_number__icontains=model_number
             )
-        )
+
+        return queryset
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
