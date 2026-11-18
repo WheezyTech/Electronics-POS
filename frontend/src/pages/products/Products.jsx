@@ -23,6 +23,17 @@ const emptyForm = {
   is_active: true,
 };
 
+function Field({ label, children, required = false }) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-sm font-medium text-gray-700">
+        {label} {required && <span className="text-red-500">*</span>}
+      </span>
+      {children}
+    </label>
+  );
+}
+
 export default function Products() {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -181,15 +192,6 @@ export default function Products() {
       );
     }
   };
-
-  const Field = ({ label, children, required = false }) => (
-    <label className="block">
-      <span className="mb-1.5 block text-sm font-medium text-gray-700">
-        {label} {required && <span className="text-red-500">*</span>}
-      </span>
-      {children}
-    </label>
-  );
 
   const inputClass =
     "w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
