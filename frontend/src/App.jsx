@@ -24,6 +24,7 @@ import Inventory from "./pages/inventory/Inventory";
 import Purchasing from "./pages/purchasing/Purchasing";
 import Barcodes from "./pages/products/Barcodes";
 import Settings from "./pages/settings/Settings";
+import StoreSetup from "./pages/settings/StoreSetup";
 
 // Electron exposes electronAPI through the preload script.
 const Router = window.electronAPI ? HashRouter : BrowserRouter;
@@ -50,6 +51,15 @@ function App() {
               <Route path="/barcodes" element={<Barcodes />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/configuration" element={<Settings />} />
+              <Route
+                element={
+                  <ProtectedRoute
+                    allowedRoles={["ADMINISTRATOR", "STORE_MANAGER"]}
+                  />
+                }
+              >
+                <Route path="/store-setup" element={<StoreSetup />} />
+              </Route>
             </Route>
           </Route>
 

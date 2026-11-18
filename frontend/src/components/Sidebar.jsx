@@ -30,6 +30,7 @@ const navigation = [
   { name: "Returns", path: "/returns", icon: RotateCcw, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER"] },
   { name: "Cashier Shifts", path: "/shifts", icon: Clock, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER"] },
   { name: "Reports", path: "/reports", icon: BarChart3, roles: ["ADMINISTRATOR", "STORE_MANAGER"] },
+  { name: "Store Setup", path: "/store-setup", icon: Settings, roles: ["ADMINISTRATOR", "STORE_MANAGER"] },
   { name: "Settings", path: "/settings", icon: Settings, roles: ["ADMINISTRATOR"] },
   { name: "Configuration", path: "/configuration", icon: Settings, roles: ["ADMINISTRATOR"] },
 ];

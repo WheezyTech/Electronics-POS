@@ -15,7 +15,7 @@ from .serializers import (
     MyProfileSerializer,
 )
 
-from .permissions import IsAdministrator
+from .permissions import IsAdministrator, IsStoreManager
 
 
 User = get_user_model()
@@ -38,6 +38,21 @@ class UserManagementViewSet(viewsets.ModelViewSet):
         'head',
         'options',
     ]
+
+    def get_permissions(self):
+        if self.action in ['list', 'create']:
+            return [IsStoreManager()]
+        return [IsAdministrator()]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if (
+            self.request.user.is_authenticated
+            and self.request.user.role == User.Role.STORE_MANAGER
+            and not self.request.user.is_superuser
+        ):
+            return queryset.filter(role=User.Role.CASHIER)
+        return queryset
 
     @action(
         detail=False,

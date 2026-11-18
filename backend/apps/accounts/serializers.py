@@ -91,6 +91,18 @@ class UserManagementSerializer(serializers.ModelSerializer):
             'created_at',
         ]
 
+    def validate_role(self, value):
+        request = self.context.get('request')
+        if (
+            request
+            and request.user.role == User.Role.STORE_MANAGER
+            and value != User.Role.CASHIER
+        ):
+            raise serializers.ValidationError(
+                'Store managers can only register cashier accounts.'
+            )
+        return value
+
     def create(self, validated_data):
         password = validated_data.pop('password')
 

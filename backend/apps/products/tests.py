@@ -129,3 +129,33 @@ class ProductLookupTests(TestCase):
             response.data['detail'],
             'This product has no available stock at the selected location.',
         )
+
+
+class StoreManagerCatalogAccessTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        manager = get_user_model().objects.create_user(
+            username='store-manager',
+            email='manager@example.com',
+            password='test-password',
+            role='STORE_MANAGER',
+        )
+        self.client.force_authenticate(user=manager)
+
+    def test_store_manager_can_add_categories_brands_and_units(self):
+        category_response = self.client.post(
+            reverse('categories-list'),
+            {'name': 'Accessories'},
+        )
+        brand_response = self.client.post(
+            reverse('brands-list'),
+            {'name': 'Test brand'},
+        )
+        unit_response = self.client.post(
+            reverse('units-list'),
+            {'name': 'Piece', 'abbreviation': 'pc'},
+        )
+
+        self.assertEqual(category_response.status_code, 201)
+        self.assertEqual(brand_response.status_code, 201)
+        self.assertEqual(unit_response.status_code, 201)
