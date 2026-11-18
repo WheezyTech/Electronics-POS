@@ -52,7 +52,9 @@ export default function Inventory() {
       ]);
 
       setBalances(getList(balanceRes.data));
-      setLocations(getList(locationRes.data));
+      setLocations(
+        getList(locationRes.data).filter((location) => location.is_active)
+      );
       setProducts(getList(productRes.data));
       setMovements(getList(movementRes.data));
       setLowStock(getList(lowRes.data));
@@ -118,7 +120,7 @@ export default function Inventory() {
     setAction(type);
     setForm({
       product: "",
-      location: "",
+      location: locations.length === 1 ? String(locations[0].id) : "",
       destination_location: "",
       quantity: "",
       notes: "",
@@ -148,7 +150,16 @@ export default function Inventory() {
         notes: form.notes,
       };
 
-      if (action === "receive") {
+      if (action === "opening") {
+        await api.post("/inventory/adjustments/", {
+          ...payload,
+          reference: "OPENING",
+          notes: [
+            "Opening stock entered manually.",
+            form.notes,
+          ].filter(Boolean).join(" "),
+        });
+      } else if (action === "receive") {
         await api.post("/inventory/receive/", payload);
       } else if (action === "issue") {
         await api.post("/inventory/issue/", payload);
@@ -188,7 +199,7 @@ export default function Inventory() {
             Inventory Management
           </h1>
           <p className="mt-1 text-sm text-gray-500">
-            Monitor and manage stock across your locations.
+            Monitor and manage the stock available at your shop.
           </p>
         </div>
 
@@ -223,6 +234,14 @@ export default function Inventory() {
 
       <div className="flex flex-wrap gap-3">
         <button
+          onClick={() => openAction("opening")}
+          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
+        >
+          <ArrowDownToLine size={17} />
+          Enter Opening Stock
+        </button>
+
+        <button
           onClick={() => openAction("receive")}
           className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-700"
         >
@@ -238,13 +257,15 @@ export default function Inventory() {
           Issue Stock
         </button>
 
-        <button
-          onClick={() => openAction("transfer")}
-          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          <ArrowLeftRight size={17} />
-          Transfer Stock
-        </button>
+        {locations.filter((location) => location.is_active).length > 1 && (
+          <button
+            onClick={() => openAction("transfer")}
+            className="flex items-center gap-2 rounded-lg border bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            <ArrowLeftRight size={17} />
+            Transfer Stock
+          </button>
+        )}
       </div>
 
       {error && !showForm && (
@@ -443,7 +464,9 @@ export default function Inventory() {
           <div className="w-full max-w-lg rounded-xl bg-white shadow-xl">
             <div className="flex items-center justify-between border-b p-5">
               <h2 className="text-lg font-bold capitalize">
-                {action} Stock
+                {action === "opening"
+                  ? "Enter Opening Stock"
+                  : `${action} Stock`}
               </h2>
               <button
                 onClick={() => setShowForm(false)}
@@ -454,6 +477,14 @@ export default function Inventory() {
             </div>
 
             <form onSubmit={submitAction} className="space-y-4 p-5">
+              {action === "opening" && (
+                <p className="rounded-lg bg-blue-50 p-3 text-sm text-blue-800">
+                  Record stock you already purchased and have in the shop.
+                  This creates a stock adjustment, not a purchase receipt or
+                  transfer. Enter only the amount not already recorded.
+                </p>
+              )}
+
               {error && (
                 <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
                   {error}
@@ -532,7 +563,9 @@ export default function Inventory() {
               )}
 
               <label className="block">
-                <span className="mb-1 block text-sm font-medium">Quantity</span>
+                <span className="mb-1 block text-sm font-medium">
+                  {action === "opening" ? "Quantity to add" : "Quantity"}
+                </span>
                 <input
                   required
                   min="0.001"
@@ -543,7 +576,11 @@ export default function Inventory() {
                     setForm({ ...form, quantity: e.target.value })
                   }
                   className="w-full rounded-lg border p-2.5 text-sm"
-                  placeholder="Enter quantity"
+                  placeholder={
+                    action === "opening"
+                      ? "Enter existing stock quantity"
+                      : "Enter quantity"
+                  }
                 />
               </label>
 
@@ -573,7 +610,11 @@ export default function Inventory() {
                   disabled={saving}
                   className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white disabled:opacity-50"
                 >
-                  {saving ? "Processing..." : "Confirm"}
+                  {saving
+                    ? "Processing..."
+                    : action === "opening"
+                      ? "Add Opening Stock"
+                      : "Confirm"}
                 </button>
               </div>
             </form>
