@@ -142,7 +142,7 @@ class StoreManagerCatalogAccessTests(TestCase):
         )
         self.client.force_authenticate(user=manager)
 
-    def test_store_manager_can_add_categories_brands_and_units(self):
+    def test_store_manager_can_add_and_edit_categories_brands_and_units(self):
         category_response = self.client.post(
             reverse('categories-list'),
             {'name': 'Accessories'},
@@ -159,3 +159,29 @@ class StoreManagerCatalogAccessTests(TestCase):
         self.assertEqual(category_response.status_code, 201)
         self.assertEqual(brand_response.status_code, 201)
         self.assertEqual(unit_response.status_code, 201)
+
+        updated_category = self.client.patch(
+            reverse(
+                'categories-detail',
+                args=[category_response.data['id']],
+            ),
+            {'name': 'Accessories and cables', 'is_active': False},
+        )
+        updated_brand = self.client.patch(
+            reverse('brands-detail', args=[brand_response.data['id']]),
+            {'description': 'Updated description'},
+        )
+        updated_unit = self.client.patch(
+            reverse('units-detail', args=[unit_response.data['id']]),
+            {'abbreviation': 'pcs'},
+        )
+
+        self.assertEqual(updated_category.status_code, 200)
+        self.assertFalse(updated_category.data['is_active'])
+        self.assertEqual(updated_brand.status_code, 200)
+        self.assertEqual(
+            updated_brand.data['description'],
+            'Updated description',
+        )
+        self.assertEqual(updated_unit.status_code, 200)
+        self.assertEqual(updated_unit.data['abbreviation'], 'pcs')

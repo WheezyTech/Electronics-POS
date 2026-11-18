@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, RefreshCw, Users } from "lucide-react";
+import { Edit, Plus, RefreshCw, Users, X } from "lucide-react";
 import api from "../../api/axios";
 
 const tabs = [
@@ -28,6 +28,7 @@ const emptyCatalogItem = {
   name: "",
   abbreviation: "",
   description: "",
+  is_active: true,
 };
 
 const getList = (data) => (
@@ -76,6 +77,7 @@ export default function StoreSetup() {
   });
   const [cashierForm, setCashierForm] = useState(emptyCashier);
   const [catalogForm, setCatalogForm] = useState(emptyCatalogItem);
+  const [editingItem, setEditingItem] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -150,21 +152,33 @@ export default function StoreSetup() {
         const payload = {
           name: catalogForm.name,
           description: catalogForm.description,
+          is_active: catalogForm.is_active,
         };
         if (activeTab === "units") {
           payload.abbreviation = catalogForm.abbreviation;
         }
 
-        const response = await api.post(
-          `/products/${activeTab}/`,
-          payload
-        );
+        const response = editingItem
+          ? await api.patch(
+              `/products/${activeTab}/${editingItem.id}/`,
+              payload
+            )
+          : await api.post(`/products/${activeTab}/`, payload);
         setData((previous) => ({
           ...previous,
-          [activeTab]: [...previous[activeTab], response.data],
+          [activeTab]: editingItem
+            ? previous[activeTab].map((item) =>
+                item.id === editingItem.id ? response.data : item
+              )
+            : [...previous[activeTab], response.data],
         }));
         setCatalogForm(emptyCatalogItem);
-        setMessage(`${catalogLabels[activeTab]} added successfully.`);
+        setMessage(
+          `${catalogLabels[activeTab]} ${
+            editingItem ? "updated" : "added"
+          } successfully.`
+        );
+        setEditingItem(null);
       }
     } catch (submitError) {
       setError(getErrorMessage(submitError, "Unable to save changes."));
@@ -214,6 +228,8 @@ export default function StoreSetup() {
             type="button"
             onClick={() => {
               setActiveTab(tab.id);
+              setEditingItem(null);
+              setCatalogForm(emptyCatalogItem);
               setError("");
               setMessage("");
             }}
@@ -268,20 +284,50 @@ export default function StoreSetup() {
           ) : (
             <div className="divide-y">
               {activeItems.map((item) => (
-                <div key={item.id} className="py-3">
-                  <p className="font-medium text-gray-900">
-                    {item.name}
-                    {item.abbreviation && (
-                      <span className="ml-2 text-sm text-gray-500">
-                        ({item.abbreviation})
-                      </span>
-                    )}
-                  </p>
-                  {item.description && (
-                    <p className="mt-1 text-sm text-gray-500">
-                      {item.description}
+                <div
+                  key={item.id}
+                  className="flex items-start justify-between gap-3 py-3"
+                >
+                  <div>
+                    <p className="font-medium text-gray-900">
+                      {item.name}
+                      {item.abbreviation && (
+                        <span className="ml-2 text-sm text-gray-500">
+                          ({item.abbreviation})
+                        </span>
+                      )}
                     </p>
-                  )}
+                    {item.description && (
+                      <p className="mt-1 text-sm text-gray-500">
+                        {item.description}
+                      </p>
+                    )}
+                    <span className={`mt-2 inline-block rounded-full px-2 py-0.5 text-xs ${
+                      item.is_active
+                        ? "bg-green-100 text-green-700"
+                        : "bg-gray-100 text-gray-600"
+                    }`}>
+                      {item.is_active ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingItem(item);
+                      setCatalogForm({
+                        name: item.name,
+                        abbreviation: item.abbreviation || "",
+                        description: item.description || "",
+                        is_active: item.is_active,
+                      });
+                      setError("");
+                      setMessage("");
+                    }}
+                    className="flex shrink-0 items-center gap-1 rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+                  >
+                    <Edit size={14} />
+                    Edit
+                  </button>
                 </div>
               ))}
             </div>
@@ -290,7 +336,9 @@ export default function StoreSetup() {
 
         <form onSubmit={handleSubmit} className="h-fit space-y-4 rounded-xl border bg-white p-5">
           <h2 className="font-semibold">
-            {isCashiersTab ? "Register a cashier" : `Add ${catalogLabels[activeTab]}`}
+            {isCashiersTab
+              ? "Register a cashier"
+              : `${editingItem ? "Edit" : "Add"} ${catalogLabels[activeTab]}`}
           </h2>
 
           {isCashiersTab ? (
@@ -397,7 +445,36 @@ export default function StoreSetup() {
                   className="mt-1 w-full rounded-lg border px-3 py-2.5 font-normal"
                 />
               </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={Boolean(catalogForm.is_active)}
+                  onChange={(event) =>
+                    setCatalogForm((previous) => ({
+                      ...previous,
+                      is_active: event.target.checked,
+                    }))
+                  }
+                />
+                Active
+              </label>
             </>
+          )}
+
+          {!isCashiersTab && editingItem && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditingItem(null);
+                setCatalogForm(emptyCatalogItem);
+                setError("");
+                setMessage("");
+              }}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm hover:bg-gray-50"
+            >
+              <X size={16} />
+              Cancel editing
+            </button>
           )}
 
           <button
@@ -406,7 +483,13 @@ export default function StoreSetup() {
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           >
             <Plus size={16} />
-            {saving ? "Saving..." : isCashiersTab ? "Register cashier" : "Add"}
+            {saving
+              ? "Saving..."
+              : isCashiersTab
+                ? "Register cashier"
+                : editingItem
+                  ? "Save changes"
+                  : "Add"}
           </button>
         </form>
       </div>
