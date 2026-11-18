@@ -1,0 +1,585 @@
+
+import { useEffect, useState } from "react";
+import {
+  Search, RefreshCw, Package, AlertTriangle,
+  ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight,
+  History, X
+} from "lucide-react";
+import api from "../../api/axios";
+
+export default function Inventory() {
+  const [balances, setBalances] = useState([]);
+  const [locations, setLocations] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [movements, setMovements] = useState([]);
+  const [lowStock, setLowStock] = useState([]);
+
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [action, setAction] = useState("receive");
+  const [saving, setSaving] = useState(false);
+
+  const [form, setForm] = useState({
+    product: "",
+    location: "",
+    destination_location: "",
+    quantity: "",
+    notes: "",
+  });
+
+  const getList = (data) =>
+    Array.isArray(data) ? data : data?.results || [];
+
+  const loadInventory = async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const [
+        balanceRes,
+        locationRes,
+        productRes,
+        movementRes,
+        lowRes,
+      ] = await Promise.all([
+        api.get("/inventory/balances/"),
+        api.get("/inventory/locations/"),
+        api.get("/products/products/"),
+        api.get("/inventory/movements/"),
+        api.get("/inventory/low-stock/"),
+      ]);
+
+      setBalances(getList(balanceRes.data));
+      setLocations(getList(locationRes.data));
+      setProducts(getList(productRes.data));
+      setMovements(getList(movementRes.data));
+      setLowStock(getList(lowRes.data));
+    } catch (err) {
+      setError(
+        err.response?.data?.detail ||
+        "Failed to load inventory information."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadInventory();
+  }, []);
+
+  const formatMoney = (value) =>
+    new Intl.NumberFormat("en-KE", {
+      style: "currency",
+      currency: "KES",
+      maximumFractionDigits: 2,
+    }).format(Number(value || 0));
+
+  const getProductName = (product) => {
+    if (typeof product === "object" && product !== null) {
+      return product.name || "Unknown product";
+    }
+
+    return products.find((p) => String(p.id) === String(product))?.name ||
+      "Unknown product";
+  };
+
+  const getLocationName = (location) => {
+    if (typeof location === "object" && location !== null) {
+      return location.name || "Unknown location";
+    }
+
+    return locations.find((l) => String(l.id) === String(location))?.name ||
+      "Unknown location";
+  };
+
+  const filteredBalances = balances.filter((item) => {
+    const name = getProductName(item.product).toLowerCase();
+    const location = getLocationName(item.location).toLowerCase();
+    const term = search.toLowerCase();
+
+    return name.includes(term) || location.includes(term);
+  });
+
+  const totalUnits = balances.reduce(
+    (sum, item) =>
+      sum + Number(
+        item.quantity_on_hand ??
+        item.quantity ??
+        item.available_quantity ??
+        0
+      ),
+    0
+  );
+
+  const openAction = (type) => {
+    setAction(type);
+    setForm({
+      product: "",
+      location: "",
+      destination_location: "",
+      quantity: "",
+      notes: "",
+    });
+    setError("");
+    setShowForm(true);
+  };
+
+  const submitAction = async (e) => {
+    e.preventDefault();
+
+    try {
+      setSaving(true);
+      setError("");
+
+      const quantity = Number(form.quantity);
+
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        setError("Enter a quantity greater than zero.");
+        return;
+      }
+
+      const payload = {
+        product: Number(form.product),
+        location: Number(form.location),
+        quantity,
+        notes: form.notes,
+      };
+
+      if (action === "receive") {
+        await api.post("/inventory/receive/", payload);
+      } else if (action === "issue") {
+        await api.post("/inventory/issue/", payload);
+      } else {
+        await api.post("/inventory/transfers/", {
+          product: Number(form.product),
+          source_location: Number(form.location),
+          destination_location: Number(form.destination_location),
+          quantity,
+          notes: form.notes,
+        });
+      }
+
+      setShowForm(false);
+      await loadInventory();
+    } catch (err) {
+      const data = err.response?.data;
+      setError(
+        typeof data === "object"
+          ? Object.entries(data)
+              .map(([key, value]) =>
+                `${key}: ${Array.isArray(value) ? value.join(", ") : value}`
+              )
+              .join(" | ")
+          : "Inventory operation failed."
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">
+            Inventory Management
+          </h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Monitor and manage stock across your locations.
+          </p>
+        </div>
+
+        <button
+          onClick={loadInventory}
+          disabled={loading}
+          className="flex items-center justify-center gap-2 rounded-lg border bg-white px-4 py-2.5 text-sm hover:bg-gray-50"
+        >
+          <RefreshCw size={16} />
+          Refresh
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="rounded-xl border bg-white p-5">
+          <p className="text-sm text-gray-500">Stock Records</p>
+          <h2 className="mt-2 text-2xl font-bold">{balances.length}</h2>
+        </div>
+
+        <div className="rounded-xl border bg-white p-5">
+          <p className="text-sm text-gray-500">Total Stock Units</p>
+          <h2 className="mt-2 text-2xl font-bold">{totalUnits}</h2>
+        </div>
+
+        <div className="rounded-xl border bg-white p-5">
+          <p className="text-sm text-gray-500">Low Stock Records</p>
+          <h2 className="mt-2 text-2xl font-bold text-red-600">
+            {lowStock.length}
+          </h2>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        <button
+          onClick={() => openAction("receive")}
+          className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-700"
+        >
+          <ArrowDownToLine size={17} />
+          Receive Stock
+        </button>
+
+        <button
+          onClick={() => openAction("issue")}
+          className="flex items-center gap-2 rounded-lg bg-orange-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-orange-700"
+        >
+          <ArrowUpFromLine size={17} />
+          Issue Stock
+        </button>
+
+        <button
+          onClick={() => openAction("transfer")}
+          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
+        >
+          <ArrowLeftRight size={17} />
+          Transfer Stock
+        </button>
+      </div>
+
+      {error && !showForm && (
+        <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      <div className="overflow-hidden rounded-xl border bg-white">
+        <div className="flex flex-col justify-between gap-3 border-b p-4 sm:flex-row sm:items-center">
+          <h2 className="font-semibold">Stock Balances</h2>
+
+          <div className="relative w-full sm:max-w-sm">
+            <Search
+              size={17}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search product or location..."
+              className="w-full rounded-lg border py-2 pl-10 pr-3 text-sm outline-none focus:border-blue-500"
+            />
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="p-10 text-center text-gray-500">
+            Loading inventory...
+          </div>
+        ) : filteredBalances.length === 0 ? (
+          <div className="p-10 text-center text-gray-500">
+            <Package className="mx-auto mb-3 text-gray-300" size={38} />
+            No stock balances found.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-50 text-gray-500">
+                <tr>
+                  <th className="px-5 py-3">Product</th>
+                  <th className="px-5 py-3">Location</th>
+                  <th className="px-5 py-3">Quantity</th>
+                  <th className="px-5 py-3">Reserved</th>
+                  <th className="px-5 py-3">Available</th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y">
+                {filteredBalances.map((item) => {
+                  const quantity = Number(
+                    item.quantity_on_hand ?? item.quantity ?? 0
+                  );
+                  const reserved = Number(
+                    item.quantity_reserved ?? item.reserved_quantity ?? 0
+                  );
+                  const available = Number(
+                    item.quantity_available ??
+                    item.available_quantity ??
+                    quantity - reserved
+                  );
+
+                  return (
+                    <tr key={item.id} className="hover:bg-gray-50">
+                      <td className="px-5 py-4 font-medium">
+                        {getProductName(item.product)}
+                      </td>
+                      <td className="px-5 py-4">
+                        {getLocationName(item.location)}
+                      </td>
+                      <td className="px-5 py-4">{quantity}</td>
+                      <td className="px-5 py-4">{reserved}</td>
+                      <td className="px-5 py-4">
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                          available <= 0
+                            ? "bg-red-100 text-red-700"
+                            : "bg-green-100 text-green-700"
+                        }`}>
+                          {available}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="overflow-hidden rounded-xl border bg-white">
+        <div className="flex items-center gap-2 border-b p-4">
+          <AlertTriangle className="text-orange-500" size={19} />
+          <h2 className="font-semibold">Low Stock Alerts</h2>
+        </div>
+
+        {lowStock.length === 0 ? (
+          <p className="p-5 text-sm text-gray-500">
+            No low-stock products reported by the backend.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-50 text-gray-500">
+                <tr>
+                  <th className="px-5 py-3">Product</th>
+                  <th className="px-5 py-3">Location</th>
+                  <th className="px-5 py-3">Quantity</th>
+                  <th className="px-5 py-3">Reorder Level</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {lowStock.map((item) => (
+                  <tr key={item.id}>
+                    <td className="px-5 py-4 font-medium">
+                      {getProductName(item.product)}
+                    </td>
+                    <td className="px-5 py-4">
+                      {getLocationName(item.location)}
+                    </td>
+                    <td className="px-5 py-4 text-red-600">
+                      {item.quantity_on_hand ??
+                        item.quantity ??
+                        item.quantity_available ??
+                        item.available_quantity ??
+                        0}
+                    </td>
+                    <td className="px-5 py-4">
+                      {item.reorder_level ?? item.product?.reorder_level ?? "-"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="overflow-hidden rounded-xl border bg-white">
+        <div className="flex items-center gap-2 border-b p-4">
+          <History size={19} />
+          <h2 className="font-semibold">Recent Stock Movements</h2>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-gray-50 text-gray-500">
+              <tr>
+                <th className="px-5 py-3">Date</th>
+                <th className="px-5 py-3">Product</th>
+                <th className="px-5 py-3">Type</th>
+                <th className="px-5 py-3">Quantity</th>
+                <th className="px-5 py-3">Location</th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y">
+              {movements.slice(0, 10).map((movement) => (
+                <tr key={movement.id}>
+                  <td className="px-5 py-4">
+                    {movement.created_at
+                      ? new Date(movement.created_at).toLocaleString("en-KE")
+                      : "-"}
+                  </td>
+                  <td className="px-5 py-4">
+                    {movement.product_name ||
+                      getProductName(movement.product)}
+                  </td>
+                  <td className="px-5 py-4">
+                    {movement.movement_type || movement.type || "-"}
+                  </td>
+                  <td className="px-5 py-4 font-medium">
+                    {movement.quantity_delta ?? movement.quantity ?? "-"}
+                  </td>
+                  <td className="px-5 py-4">
+                    {movement.location_name ||
+                      getLocationName(movement.location)}
+                  </td>
+                </tr>
+              ))}
+
+              {movements.length === 0 && (
+                <tr>
+                  <td colSpan="5" className="p-8 text-center text-gray-500">
+                    No stock movements found.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-xl bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b p-5">
+              <h2 className="text-lg font-bold capitalize">
+                {action} Stock
+              </h2>
+              <button
+                onClick={() => setShowForm(false)}
+                className="rounded-lg p-2 hover:bg-gray-100"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={submitAction} className="space-y-4 p-5">
+              {error && (
+                <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
+                  {error}
+                </div>
+              )}
+
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium">Product</span>
+                <select
+                  required
+                  value={form.product}
+                  onChange={(e) =>
+                    setForm({ ...form, product: e.target.value })
+                  }
+                  className="w-full rounded-lg border p-2.5 text-sm"
+                >
+                  <option value="">Select product</option>
+                  {products.map((product) => (
+                    <option key={product.id} value={product.id}>
+                      {product.name} ({product.sku})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium">
+                  {action === "transfer" ? "Source Location" : "Location"}
+                </span>
+                <select
+                  required
+                  value={form.location}
+                  onChange={(e) =>
+                    setForm({ ...form, location: e.target.value })
+                  }
+                  className="w-full rounded-lg border p-2.5 text-sm"
+                >
+                  <option value="">Select location</option>
+                  {locations.map((location) => (
+                    <option key={location.id} value={location.id}>
+                      {location.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {action === "transfer" && (
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium">
+                    Destination Location
+                  </span>
+                  <select
+                    required
+                    value={form.destination_location}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        destination_location: e.target.value,
+                      })
+                    }
+                    className="w-full rounded-lg border p-2.5 text-sm"
+                  >
+                    <option value="">Select destination</option>
+                    {locations
+                      .filter(
+                        (location) =>
+                          String(location.id) !== String(form.location)
+                      )
+                      .map((location) => (
+                        <option key={location.id} value={location.id}>
+                          {location.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              )}
+
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium">Quantity</span>
+                <input
+                  required
+                  min="0.001"
+                  step="any"
+                  type="number"
+                  value={form.quantity}
+                  onChange={(e) =>
+                    setForm({ ...form, quantity: e.target.value })
+                  }
+                  className="w-full rounded-lg border p-2.5 text-sm"
+                  placeholder="Enter quantity"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium">Notes</span>
+                <textarea
+                  rows={3}
+                  value={form.notes}
+                  onChange={(e) =>
+                    setForm({ ...form, notes: e.target.value })
+                  }
+                  className="w-full rounded-lg border p-2.5 text-sm"
+                  placeholder="Reason or additional notes..."
+                />
+              </label>
+
+              <div className="flex justify-end gap-3 border-t pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowForm(false)}
+                  className="rounded-lg border px-4 py-2 text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white disabled:opacity-50"
+                >
+                  {saving ? "Processing..." : "Confirm"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
