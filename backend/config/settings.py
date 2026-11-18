@@ -77,8 +77,21 @@ ALLOWED_HOSTS = [
 
 CSRF_TRUSTED_ORIGINS = [
     "https://electronics-pos-production.up.railway.app",
+    "https://radiant-inspiration-production-77d51767.up.railway.app",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+]
+
+CORS_ALLOWED_ORIGINS = [
+    # React development
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+
+    # Production React frontend
+    "https://radiant-inspiration-production-77d51767.up.railway.app",
+
+    # Electron application
+    "null",
 ]
 
 ROOT_URLCONF = 'config.urls'
