@@ -18,6 +18,7 @@ from rest_framework.exceptions import ValidationError
 
 from .models import (
     Category,
+    ProductType,
     Brand,
     Unit,
     Product,
@@ -26,6 +27,7 @@ from .models import (
 
 from .serializers import (
     CategorySerializer,
+    ProductTypeSerializer,
     BrandSerializer,
     UnitSerializer,
     ProductSerializer,
@@ -66,6 +68,17 @@ class CategoryViewSet(viewsets.ModelViewSet):
     ordering_fields = ['name', 'created_at']
 
 
+class ProductTypeViewSet(viewsets.ModelViewSet):
+    queryset = ProductType.objects.all()
+    serializer_class = ProductTypeSerializer
+    permission_classes = [ProductAccessPermission]
+    http_method_names = ['get', 'post', 'put', 'patch', 'head', 'options']
+
+    search_fields = ['name', 'description']
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    ordering_fields = ['name', 'created_at']
+
+
 class BrandViewSet(viewsets.ModelViewSet):
     queryset = Brand.objects.all()
     serializer_class = BrandSerializer
@@ -90,6 +103,7 @@ class UnitViewSet(viewsets.ModelViewSet):
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.select_related(
         'category',
+        'product_type',
         'brand',
         'unit',
         'created_by',
@@ -110,6 +124,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         'model_number',
         'description',
         'category__name',
+        'product_type__name',
         'brand__name',
         'barcodes__barcode',
     ]
@@ -119,6 +134,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         'cost_price',
         'selling_price',
         'created_at',
+        'product_type__name',
     ]
 
     def get_queryset(self):
@@ -189,7 +205,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                     )
                 )
 
-        for field in ('category', 'unit', 'brand'):
+        for field in ('category', 'product_type', 'unit', 'brand'):
             value = self.request.query_params.get(field)
             if value:
                 try:

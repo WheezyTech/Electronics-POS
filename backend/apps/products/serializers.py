@@ -9,6 +9,7 @@ from apps.inventory.models import StockLocation, StockMovement
 from apps.inventory.services import change_stock
 from .models import (
     Category,
+    ProductType,
     Brand,
     Unit,
     Product,
@@ -19,6 +20,13 @@ from .models import (
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class ProductTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProductType
         fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -79,6 +87,12 @@ class ProductSerializer(serializers.ModelSerializer):
         read_only=True
     )
 
+    product_type_name = serializers.CharField(
+        source='product_type.name',
+        read_only=True,
+        allow_null=True,
+    )
+
     brand_name = serializers.CharField(
         source='brand.name',
         read_only=True,
@@ -104,6 +118,8 @@ class ProductSerializer(serializers.ModelSerializer):
             'sku',
             'category',
             'category_name',
+            'product_type',
+            'product_type_name',
             'brand',
             'brand_name',
             'model_number',

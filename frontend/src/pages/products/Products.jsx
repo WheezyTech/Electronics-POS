@@ -10,6 +10,7 @@ const emptyForm = {
   name: "",
   sku: "",
   category: "",
+  product_type: "",
   brand: "",
   model_number: "",
   description: "",
@@ -27,9 +28,10 @@ const getList = (data) =>
   Array.isArray(data) ? data : data?.results || [];
 
 async function fetchProductData() {
-  const [productRes, categoryRes, brandRes, unitRes] = await Promise.all([
+  const [productRes, categoryRes, productTypeRes, brandRes, unitRes] = await Promise.all([
     api.get("/products/products/"),
     api.get("/products/categories/"),
+    api.get("/products/product-types/"),
     api.get("/products/brands/"),
     api.get("/products/units/"),
   ]);
@@ -37,6 +39,7 @@ async function fetchProductData() {
   return {
     products: getList(productRes.data),
     categories: getList(categoryRes.data),
+    productTypes: getList(productTypeRes.data),
     brands: getList(brandRes.data),
     units: getList(unitRes.data),
   };
@@ -56,6 +59,7 @@ function Field({ label, children, required = false }) {
 export default function Products() {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [productTypes, setProductTypes] = useState([]);
   const [brands, setBrands] = useState([]);
   const [units, setUnits] = useState([]);
   const [locations, setLocations] = useState([]);
@@ -65,6 +69,10 @@ export default function Products() {
   const [error, setError] = useState("");
   const [locationError, setLocationError] = useState("");
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [productTypeFilter, setProductTypeFilter] = useState("");
+  const [brandFilter, setBrandFilter] = useState("");
+  const [sortBy, setSortBy] = useState("name");
   const [showForm, setShowForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [form, setForm] = useState(emptyForm);
@@ -78,6 +86,7 @@ export default function Products() {
       const data = await fetchProductData();
       setProducts(data.products);
       setCategories(data.categories);
+      setProductTypes(data.productTypes);
       setBrands(data.brands);
       setUnits(data.units);
     } catch (err) {
@@ -97,6 +106,7 @@ export default function Products() {
         if (!active) return;
         setProducts(data.products);
         setCategories(data.categories);
+        setProductTypes(data.productTypes);
         setBrands(data.brands);
         setUnits(data.units);
       })
@@ -150,12 +160,45 @@ export default function Products() {
 
   const filteredProducts = products.filter((product) => {
     const term = search.toLowerCase();
+    const categoryId = product.category?.id || product.category;
+    const productTypeId = product.product_type?.id || product.product_type;
+    const brandId = product.brand?.id || product.brand;
 
     return (
       product.name?.toLowerCase().includes(term) ||
       product.sku?.toLowerCase().includes(term) ||
-      product.model_number?.toLowerCase().includes(term)
+      product.model_number?.toLowerCase().includes(term) ||
+      product.category_name?.toLowerCase().includes(term) ||
+      product.product_type_name?.toLowerCase().includes(term) ||
+      product.brand_name?.toLowerCase().includes(term) ||
+      (!product.brand_name &&
+        product.brand?.name?.toLowerCase().includes(term)) ||
+      (!product.category_name &&
+        product.category?.name?.toLowerCase().includes(term)) ||
+      (!product.product_type_name &&
+        product.product_type?.name?.toLowerCase().includes(term))
+    ) && (
+      !categoryFilter || String(categoryId) === categoryFilter
+    ) && (
+      !productTypeFilter || String(productTypeId) === productTypeFilter
+    ) && (
+      !brandFilter || String(brandId) === brandFilter
     );
+  });
+  const sortedProducts = [...filteredProducts].sort((first, second) => {
+    const getSortValue = (product) => {
+      if (sortBy === "brand") {
+        return product.brand_name || product.brand?.name || "";
+      }
+      if (sortBy === "category") {
+        return product.category_name || product.category?.name || "";
+      }
+      if (sortBy === "product_type") {
+        return product.product_type_name || product.product_type?.name || "";
+      }
+      return product.name || "";
+    };
+    return getSortValue(first).localeCompare(getSortValue(second));
   });
 
   const formatMoney = (amount) =>
@@ -182,6 +225,7 @@ export default function Products() {
       ...emptyForm,
       ...product,
       category: product.category?.id || product.category || "",
+      product_type: product.product_type?.id || product.product_type || "",
       brand: product.brand?.id || product.brand || "",
       unit: product.unit?.id || product.unit || "",
     });
@@ -207,6 +251,7 @@ export default function Products() {
       const payload = {
         ...form,
         category: Number(form.category),
+        product_type: form.product_type ? Number(form.product_type) : null,
         brand: form.brand ? Number(form.brand) : null,
         unit: Number(form.unit),
         cost_price: Number(form.cost_price),
@@ -348,17 +393,69 @@ export default function Products() {
 
       <div className="overflow-hidden rounded-xl border bg-white">
         <div className="border-b p-4">
-          <div className="relative max-w-md">
-            <Search
-              size={18}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-            />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search product, SKU or model..."
-              className="w-full rounded-lg border py-2.5 pl-10 pr-4 text-sm outline-none focus:border-blue-500"
-            />
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <div className="relative">
+              <Search
+                size={18}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+              />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search product, SKU, brand or type..."
+                className="w-full rounded-lg border py-2.5 pl-10 pr-4 text-sm outline-none focus:border-blue-500"
+              />
+            </div>
+            <select
+              value={brandFilter}
+              onChange={(e) => setBrandFilter(e.target.value)}
+              aria-label="Filter products by brand"
+              className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+            >
+              <option value="">All brands</option>
+              {brands.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={productTypeFilter}
+              onChange={(e) => setProductTypeFilter(e.target.value)}
+              aria-label="Filter products by product type"
+              className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+            >
+              <option value="">All product types</option>
+              {productTypes.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              aria-label="Filter products by category"
+              className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+            >
+              <option value="">All categories</option>
+              {categories.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              aria-label="Sort products"
+              className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+            >
+              <option value="name">Sort by product name</option>
+              <option value="brand">Sort by brand</option>
+              <option value="product_type">Sort by product type</option>
+              <option value="category">Sort by category</option>
+            </select>
           </div>
         </div>
 
@@ -366,12 +463,12 @@ export default function Products() {
           <div className="p-10 text-center text-gray-500">
             Loading products...
           </div>
-        ) : filteredProducts.length === 0 ? (
+        ) : sortedProducts.length === 0 ? (
           <div className="p-10 text-center">
             <Package className="mx-auto mb-3 text-gray-300" size={40} />
             <p className="font-medium text-gray-700">No products found</p>
             <p className="mt-1 text-sm text-gray-500">
-              Add a product or change your search.
+              Add a product or change your search and filters.
             </p>
           </div>
         ) : (
@@ -380,6 +477,9 @@ export default function Products() {
               <thead className="bg-gray-50 text-gray-500">
                 <tr>
                   <th className="px-5 py-3">Product</th>
+                  <th className="px-5 py-3">Brand</th>
+                  <th className="px-5 py-3">Product Type</th>
+                  <th className="px-5 py-3">Category</th>
                   <th className="px-5 py-3">SKU</th>
                   <th className="px-5 py-3">Cost Price</th>
                   <th className="px-5 py-3">Selling Price</th>
@@ -390,7 +490,7 @@ export default function Products() {
               </thead>
 
               <tbody className="divide-y">
-                {filteredProducts.map((product) => (
+                {sortedProducts.map((product) => (
                   <tr key={product.id} className="hover:bg-gray-50">
                     <td className="px-5 py-4">
                       <p className="font-semibold text-gray-900">
@@ -401,6 +501,17 @@ export default function Products() {
                       </p>
                     </td>
 
+                    <td className="px-5 py-4">
+                      {product.brand_name || product.brand?.name || "—"}
+                    </td>
+                    <td className="px-5 py-4">
+                      {product.product_type_name ||
+                        product.product_type?.name ||
+                        "—"}
+                    </td>
+                    <td className="px-5 py-4">
+                      {product.category_name || product.category?.name || "—"}
+                    </td>
                     <td className="px-5 py-4">{product.sku}</td>
                     <td className="px-5 py-4">
                       {formatMoney(product.cost_price)}
@@ -507,6 +618,24 @@ export default function Products() {
                   >
                     <option value="">Select category</option>
                     {categories.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+
+                <Field label="Product Type" required>
+                  <select
+                    required
+                    className={inputClass}
+                    value={form.product_type}
+                    onChange={(e) =>
+                      updateField("product_type", e.target.value)
+                    }
+                  >
+                    <option value="">Select product type</option>
+                    {productTypes.map((item) => (
                       <option key={item.id} value={item.id}>
                         {item.name}
                       </option>

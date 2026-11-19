@@ -5,12 +5,14 @@ import api from "../../api/axios";
 const tabs = [
   { id: "cashiers", label: "Cashiers" },
   { id: "categories", label: "Categories" },
+  { id: "product-types", label: "Product Types" },
   { id: "brands", label: "Brands" },
   { id: "units", label: "Units" },
 ];
 
 const catalogLabels = {
   categories: "category",
+  "product-types": "product type",
   brands: "brand",
   units: "unit",
 };
@@ -50,9 +52,10 @@ function getErrorMessage(error, fallback) {
 }
 
 async function fetchStoreData() {
-  const [cashiers, categories, brands, units] = await Promise.all([
+  const [cashiers, categories, productTypes, brands, units] = await Promise.all([
     api.get("/auth/users/"),
     api.get("/products/categories/"),
+    api.get("/products/product-types/"),
     api.get("/products/brands/"),
     api.get("/products/units/"),
   ]);
@@ -62,6 +65,7 @@ async function fetchStoreData() {
       (user) => user.role === "CASHIER"
     ),
     categories: getList(categories.data),
+    "product-types": getList(productTypes.data),
     brands: getList(brands.data),
     units: getList(units.data),
   };
@@ -72,6 +76,7 @@ export default function StoreSetup() {
   const [data, setData] = useState({
     cashiers: [],
     categories: [],
+    "product-types": [],
     brands: [],
     units: [],
   });
@@ -196,7 +201,7 @@ export default function StoreSetup() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Store Setup</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Register cashiers and manage product categories, brands, and units.
+            Register cashiers and manage product categories, types, brands, and units.
           </p>
         </div>
         <button

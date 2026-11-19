@@ -4,7 +4,7 @@ from django.urls import reverse
 from rest_framework.test import APIClient
 
 from apps.inventory.models import StockBalance, StockLocation, StockMovement
-from .models import Brand, Category, Product, ProductBarcode, Unit
+from .models import Brand, Category, Product, ProductBarcode, ProductType, Unit
 
 
 class ProductLookupTests(TestCase):
@@ -27,12 +27,14 @@ class ProductLookupTests(TestCase):
         sku,
         is_active=True,
         brand=None,
+        product_type=None,
         model_number='',
     ):
         return Product.objects.create(
             name=name,
             sku=sku,
             category=self.category,
+            product_type=product_type,
             brand=brand,
             model_number=model_number,
             unit=self.unit,
@@ -171,6 +173,29 @@ class ProductLookupTests(TestCase):
             '2.000',
         )
 
+    def test_product_type_filter_returns_type_name(self):
+        charger = ProductType.objects.create(name='Charger')
+        earphone = ProductType.objects.create(name='Earphone')
+        charger_product = self.create_product(
+            name='USB charger',
+            sku='CHARGER-SKU',
+            product_type=charger,
+        )
+        self.create_product(
+            name='Wireless earphone',
+            sku='EARPHONE-SKU',
+            product_type=earphone,
+        )
+
+        response = self.client.get(
+            reverse('products-list'),
+            {'product_type': charger.id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item['id'] for item in response.data], [charger_product.id])
+        self.assertEqual(response.data[0]['product_type_name'], 'Charger')
+
     def test_all_products_filter_includes_items_without_location_stock(self):
         location = StockLocation.objects.create(
             name='Test store',
@@ -270,6 +295,22 @@ class ProductOpeningStockTests(TestCase):
         )
         self.assertEqual(movement.reference, 'OPENING')
 
+    def test_create_product_with_type(self):
+        product_type = ProductType.objects.create(name='Charger')
+
+        response = self.client.post(
+            reverse('products-list'),
+            {
+                **self.payload,
+                'product_type': product_type.id,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['product_type'], product_type.id)
+        self.assertEqual(response.data['product_type_name'], 'Charger')
+
     def test_opening_stock_requires_a_location_and_does_not_create_product(self):
         response = self.client.post(
             reverse('products-list'),
@@ -325,10 +366,14 @@ class StoreManagerCatalogAccessTests(TestCase):
         )
         self.client.force_authenticate(user=manager)
 
-    def test_store_manager_can_add_and_edit_categories_brands_and_units(self):
+    def test_store_manager_can_add_and_edit_product_catalog_items(self):
         category_response = self.client.post(
             reverse('categories-list'),
             {'name': 'Accessories'},
+        )
+        product_type_response = self.client.post(
+            reverse('product-types-list'),
+            {'name': 'Charger'},
         )
         brand_response = self.client.post(
             reverse('brands-list'),
@@ -340,6 +385,7 @@ class StoreManagerCatalogAccessTests(TestCase):
         )
 
         self.assertEqual(category_response.status_code, 201)
+        self.assertEqual(product_type_response.status_code, 201)
         self.assertEqual(brand_response.status_code, 201)
         self.assertEqual(unit_response.status_code, 201)
 
@@ -349,6 +395,13 @@ class StoreManagerCatalogAccessTests(TestCase):
                 args=[category_response.data['id']],
             ),
             {'name': 'Accessories and cables', 'is_active': False},
+        )
+        updated_product_type = self.client.patch(
+            reverse(
+                'product-types-detail',
+                args=[product_type_response.data['id']],
+            ),
+            {'name': 'Wall Charger', 'is_active': False},
         )
         updated_brand = self.client.patch(
             reverse('brands-detail', args=[brand_response.data['id']]),
@@ -361,6 +414,9 @@ class StoreManagerCatalogAccessTests(TestCase):
 
         self.assertEqual(updated_category.status_code, 200)
         self.assertFalse(updated_category.data['is_active'])
+        self.assertEqual(updated_product_type.status_code, 200)
+        self.assertEqual(updated_product_type.data['name'], 'Wall Charger')
+        self.assertFalse(updated_product_type.data['is_active'])
         self.assertEqual(updated_brand.status_code, 200)
         self.assertEqual(
             updated_brand.data['description'],

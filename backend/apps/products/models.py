@@ -20,6 +20,21 @@ class Category(models.Model):
         return self.name
 
 
+class ProductType(models.Model):
+    name = models.CharField(max_length=150, unique=True)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
 class Brand(models.Model):
     name = models.CharField(max_length=150, unique=True)
     description = models.TextField(blank=True)
@@ -59,6 +74,14 @@ class Product(models.Model):
     category = models.ForeignKey(
         Category,
         on_delete=models.PROTECT,
+        related_name="products"
+    )
+
+    product_type = models.ForeignKey(
+        ProductType,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name="products"
     )
 
