@@ -9,6 +9,8 @@ import api from "../../api/axios";
 const emptyForm = {
   name: "",
   sku: "",
+  barcode: "",
+  barcode_type: "OTHER",
   category: "",
   product_type: "",
   brand: "",
@@ -168,6 +170,9 @@ export default function Products() {
       product.name?.toLowerCase().includes(term) ||
       product.sku?.toLowerCase().includes(term) ||
       product.model_number?.toLowerCase().includes(term) ||
+      product.barcodes?.some((item) =>
+        item.barcode?.toLowerCase().includes(term)
+      ) ||
       product.category_name?.toLowerCase().includes(term) ||
       product.product_type_name?.toLowerCase().includes(term) ||
       product.brand_name?.toLowerCase().includes(term) ||
@@ -220,10 +225,15 @@ export default function Products() {
   };
 
   const openEditForm = (product) => {
+    const primaryBarcode =
+      product.barcodes?.find((item) => item.is_primary) ||
+      product.barcodes?.[0];
     setEditingProduct(product);
     setForm({
       ...emptyForm,
       ...product,
+      barcode: primaryBarcode?.barcode || "",
+      barcode_type: primaryBarcode?.barcode_type || "OTHER",
       category: product.category?.id || product.category || "",
       product_type: product.product_type?.id || product.product_type || "",
       brand: product.brand?.id || product.brand || "",
@@ -481,6 +491,7 @@ export default function Products() {
                   <th className="px-5 py-3">Product Type</th>
                   <th className="px-5 py-3">Category</th>
                   <th className="px-5 py-3">SKU</th>
+                  <th className="px-5 py-3">Barcode</th>
                   <th className="px-5 py-3">Cost Price</th>
                   <th className="px-5 py-3">Selling Price</th>
                   <th className="px-5 py-3">Warranty</th>
@@ -513,6 +524,12 @@ export default function Products() {
                       {product.category_name || product.category?.name || "—"}
                     </td>
                     <td className="px-5 py-4">{product.sku}</td>
+                    <td className="px-5 py-4">
+                      {product.barcodes?.find((item) => item.is_primary)
+                        ?.barcode ||
+                        product.barcodes?.[0]?.barcode ||
+                        "—"}
+                    </td>
                     <td className="px-5 py-4">
                       {formatMoney(product.cost_price)}
                     </td>
@@ -607,6 +624,31 @@ export default function Products() {
                     onChange={(e) => updateField("sku", e.target.value)}
                     placeholder="e.g. TV-SAM-001"
                   />
+                </Field>
+
+                <Field label="Barcode">
+                  <input
+                    className={inputClass}
+                    value={form.barcode}
+                    onChange={(e) => updateField("barcode", e.target.value)}
+                    placeholder="Scan or enter barcode"
+                  />
+                </Field>
+
+                <Field label="Barcode Type">
+                  <select
+                    className={inputClass}
+                    value={form.barcode_type}
+                    onChange={(e) => updateField("barcode_type", e.target.value)}
+                  >
+                    <option value="EAN13">EAN-13</option>
+                    <option value="EAN8">EAN-8</option>
+                    <option value="UPC_A">UPC-A</option>
+                    <option value="UPC_E">UPC-E</option>
+                    <option value="CODE128">Code 128</option>
+                    <option value="QR">QR Code</option>
+                    <option value="OTHER">Other</option>
+                  </select>
                 </Field>
 
                 <Field label="Category" required>

@@ -311,6 +311,25 @@ class ProductOpeningStockTests(TestCase):
         self.assertEqual(response.data['product_type'], product_type.id)
         self.assertEqual(response.data['product_type_name'], 'Charger')
 
+    def test_create_product_with_barcode(self):
+        response = self.client.post(
+            reverse('products-list'),
+            {
+                **self.payload,
+                'barcode': '6000000000001',
+                'barcode_type': 'EAN13',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        product = Product.objects.get(sku='NEW-PHONE')
+        barcode = ProductBarcode.objects.get(product=product)
+        self.assertEqual(barcode.barcode, '6000000000001')
+        self.assertEqual(barcode.barcode_type, 'EAN13')
+        self.assertTrue(barcode.is_primary)
+        self.assertEqual(response.data['barcodes'][0]['barcode'], '6000000000001')
+
     def test_opening_stock_requires_a_location_and_does_not_create_product(self):
         response = self.client.post(
             reverse('products-list'),

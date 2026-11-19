@@ -60,6 +60,19 @@ class ProductBarcodeSerializer(serializers.ModelSerializer):
 
 
 class ProductSerializer(serializers.ModelSerializer):
+    barcode = serializers.CharField(
+        write_only=True,
+        required=False,
+        allow_blank=True,
+        max_length=150,
+    )
+    barcode_type = serializers.ChoiceField(
+        choices=ProductBarcode.BarcodeType.choices,
+        write_only=True,
+        required=False,
+        default=ProductBarcode.BarcodeType.OTHER,
+    )
+
     opening_stock = serializers.DecimalField(
         max_digits=14,
         decimal_places=3,
@@ -136,6 +149,8 @@ class ProductSerializer(serializers.ModelSerializer):
             'is_active',
             'location_quantity_available',
             'barcodes',
+            'barcode',
+            'barcode_type',
             'created_by',
             'created_at',
             'updated_at',
@@ -151,6 +166,16 @@ class ProductSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, attrs):
+        barcode = attrs.get('barcode', '').strip() if 'barcode' in attrs else ''
+        if barcode:
+            existing = ProductBarcode.objects.filter(barcode=barcode)
+            if self.instance:
+                existing = existing.exclude(product=self.instance)
+            if existing.exists():
+                raise serializers.ValidationError({
+                    'barcode': 'This barcode is already registered to another product.'
+                })
+
         if self.instance and {
             'opening_stock',
             'opening_stock_location',
@@ -220,7 +245,20 @@ class ProductSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         opening_stock = validated_data.pop('opening_stock', Decimal('0'))
         location = validated_data.pop('opening_stock_location', None)
+        barcode = validated_data.pop('barcode', '').strip()
+        barcode_type = validated_data.pop(
+            'barcode_type',
+            ProductBarcode.BarcodeType.OTHER,
+        )
         product = super().create(validated_data)
+
+        if barcode:
+            ProductBarcode.objects.create(
+                product=product,
+                barcode=barcode,
+                barcode_type=barcode_type,
+                is_primary=True,
+            )
 
         if opening_stock > 0:
             change_stock(
@@ -232,5 +270,34 @@ class ProductSerializer(serializers.ModelSerializer):
                 reference='OPENING',
                 notes='Opening stock entered manually during product creation.',
             )
+
+        return product
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        barcode = validated_data.pop('barcode', None)
+        barcode_type = validated_data.pop(
+            'barcode_type',
+            ProductBarcode.BarcodeType.OTHER,
+        )
+        product = super().update(instance, validated_data)
+
+        if isinstance(barcode, str) and barcode.strip():
+            primary_barcode = (
+                product.barcodes.filter(is_primary=True).first()
+                or product.barcodes.first()
+            )
+            if primary_barcode:
+                primary_barcode.barcode = barcode.strip()
+                primary_barcode.barcode_type = barcode_type
+                primary_barcode.is_primary = True
+                primary_barcode.save()
+            else:
+                ProductBarcode.objects.create(
+                    product=product,
+                    barcode=barcode.strip(),
+                    barcode_type=barcode_type,
+                    is_primary=True,
+                )
 
         return product
