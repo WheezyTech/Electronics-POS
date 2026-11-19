@@ -137,11 +137,11 @@ SIMPLE_JWT = {
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.environ.get("PGDATABASE", ""),
-        "USER": os.environ.get("PGUSER", ""),
-        "PASSWORD": os.environ.get("PGPASSWORD", ""),
-        "HOST": os.environ.get("PGHOST", "127.0.0.1"),
-        "PORT": os.environ.get("PGPORT", "5432"),
+        "NAME": os.environ.get("PGDATABASE") or os.environ.get("DB_NAME", ""),
+        "USER": os.environ.get("PGUSER") or os.environ.get("DB_USER", ""),
+        "PASSWORD": os.environ.get("PGPASSWORD") or os.environ.get("DB_PASSWORD", ""),
+        "HOST": os.environ.get("PGHOST") or os.environ.get("DB_HOST", "127.0.0.1"),
+        "PORT": os.environ.get("PGPORT") or os.environ.get("DB_PORT", "5432"),
         "OPTIONS": {
             "connect_timeout": 10,
         },

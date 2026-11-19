@@ -25,6 +25,7 @@ export default function POS() {
   const [products, setProducts] = useState([]);
   const [locations, setLocations] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [productTypes, setProductTypes] = useState([]);
   const [brands, setBrands] = useState([]);
   const [units, setUnits] = useState([]);
   const [location, setLocation] = useState(
@@ -45,6 +46,7 @@ export default function POS() {
   const [skuFilter, setSkuFilter] = useState("");
   const [modelFilter, setModelFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
+  const [productTypeFilter, setProductTypeFilter] = useState("");
   const [brandFilter, setBrandFilter] = useState("");
   const [unitFilter, setUnitFilter] = useState("");
   const [inStockOnly, setInStockOnly] = useState(true);
@@ -98,12 +100,16 @@ export default function POS() {
   useEffect(() => {
     Promise.all([
       api.get("/products/categories/"),
+      api.get("/products/product-types/"),
       api.get("/products/brands/"),
       api.get("/products/units/"),
     ])
-      .then(([categoryResponse, brandResponse, unitResponse]) => {
+      .then(([categoryResponse, productTypeResponse, brandResponse, unitResponse]) => {
         setCategories(
           getList(categoryResponse.data).filter((item) => item.is_active)
+        );
+        setProductTypes(
+          getList(productTypeResponse.data).filter((item) => item.is_active)
         );
         setBrands(
           getList(brandResponse.data).filter((item) => item.is_active)
@@ -178,6 +184,7 @@ export default function POS() {
         skuFilter,
         modelFilter,
         categoryFilter,
+        productTypeFilter,
         brandFilter,
         unitFilter,
       ].some((value) => value.trim());
@@ -195,6 +202,7 @@ export default function POS() {
       if (skuFilter.trim()) params.sku = skuFilter.trim();
       if (modelFilter.trim()) params.model_number = modelFilter.trim();
       if (categoryFilter) params.category = categoryFilter;
+      if (productTypeFilter) params.product_type = productTypeFilter;
       if (brandFilter) params.brand = brandFilter;
       if (unitFilter) params.unit = unitFilter;
 
@@ -218,6 +226,7 @@ export default function POS() {
     skuFilter,
     modelFilter,
     categoryFilter,
+    productTypeFilter,
     brandFilter,
     unitFilter,
     inStockOnly,
@@ -348,6 +357,7 @@ export default function POS() {
     setSkuFilter("");
     setModelFilter("");
     setCategoryFilter("");
+    setProductTypeFilter("");
     setBrandFilter("");
     setUnitFilter("");
     setInStockOnly(true);
@@ -692,6 +702,20 @@ export default function POS() {
             </div>
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <select
+                value={productTypeFilter}
+                onChange={(event) => setProductTypeFilter(event.target.value)}
+                disabled={loading || isLoadingDraft}
+                className="w-full rounded-lg border border-slate-300 p-3"
+                aria-label="Filter by product type"
+              >
+                <option value="">All product types</option>
+                {productTypes.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+              <select
                 value={categoryFilter}
                 onChange={(event) => setCategoryFilter(event.target.value)}
                 disabled={loading || isLoadingDraft}
@@ -762,6 +786,7 @@ export default function POS() {
             (search.trim() ||
               skuFilter.trim() ||
               modelFilter.trim() ||
+              productTypeFilter ||
               categoryFilter ||
               brandFilter ||
               unitFilter) &&
