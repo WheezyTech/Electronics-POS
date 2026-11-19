@@ -1,13 +1,39 @@
+import { useState } from "react";
+import { Menu, Monitor } from "lucide-react";
 import { Outlet } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 
 export default function DashboardLayout() {
-  return (
-    <div className="flex min-h-screen bg-slate-100">
-      <Sidebar />
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-      <main className="min-w-0 flex-1 overflow-y-auto">
-        <Outlet />
+  return (
+    <div className="flex h-dvh overflow-hidden bg-slate-100">
+      <Sidebar
+        mobileOpen={mobileMenuOpen}
+        onMobileClose={() => setMobileMenuOpen(false)}
+      />
+
+      <main className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
+        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 md:hidden">
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(true)}
+            aria-label="Open navigation menu"
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-slate-200 text-slate-700"
+          >
+            <Menu size={21} />
+          </button>
+          <div className="flex min-w-0 items-center gap-2">
+            <Monitor size={20} className="shrink-0 text-blue-700" />
+            <span className="truncate font-semibold text-slate-900">
+              Electronics POS
+            </span>
+          </div>
+        </header>
+
+        <div className="min-w-0 px-3 py-4 sm:px-5 md:px-6 md:py-6 lg:px-8">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

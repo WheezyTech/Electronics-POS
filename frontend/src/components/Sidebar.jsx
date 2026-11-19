@@ -35,7 +35,7 @@ const navigation = [
   { name: "Configuration", path: "/configuration", icon: Settings, roles: ["ADMINISTRATOR"] },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ mobileOpen = false, onMobileClose = () => {} }) {
   const { user, logout } = useAuth();
 
   const visibleLinks = navigation.filter(
@@ -45,7 +45,18 @@ export default function Sidebar() {
   );
 
   return (
-    <aside className="flex h-screen w-64 shrink-0 flex-col bg-gradient-to-b from-blue-700 to-blue-900 text-white">
+    <>
+      {mobileOpen && (
+        <button
+          type="button"
+          aria-label="Close navigation menu"
+          onClick={onMobileClose}
+          className="fixed inset-0 z-40 bg-slate-950/50 md:hidden"
+        />
+      )}
+      <aside className={`fixed inset-y-0 left-0 z-50 flex h-dvh w-72 shrink-0 flex-col bg-gradient-to-b from-blue-700 to-blue-900 text-white transition-transform duration-200 md:static md:z-auto md:h-screen md:w-64 md:translate-x-0 ${
+        mobileOpen ? "translate-x-0" : "-translate-x-full"
+      }`}>
       <div className="flex items-center gap-3 border-b border-blue-500/30 px-6 py-6">
         <div className="rounded-lg bg-blue-500 p-2 shadow-inner shadow-blue-300/30">
           <Monitor size={24} />
@@ -72,6 +83,7 @@ export default function Sidebar() {
               key={item.path}
               to={item.path}
               end={item.path === "/dashboard"}
+              onClick={onMobileClose}
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-lg px-4 py-3 text-sm transition ${
                   isActive
@@ -101,6 +113,7 @@ export default function Sidebar() {
           Logout
         </button>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

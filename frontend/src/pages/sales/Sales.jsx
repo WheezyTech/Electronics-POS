@@ -138,8 +138,8 @@ function SaleDetails({ sale, onClose, onReceipt }) {
             Products Sold
           </h3>
 
-          <div className="overflow-x-auto rounded-xl border">
-            <table className="w-full text-left text-sm">
+          <div className="responsive-table-wrap overflow-x-auto rounded-xl border">
+            <table className="responsive-table w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
                   <th className="px-4 py-3">Product</th>
@@ -152,7 +152,7 @@ function SaleDetails({ sale, onClose, onReceipt }) {
               <tbody className="divide-y">
                 {(sale.items || []).map((item) => (
                   <tr key={item.id}>
-                    <td className="px-4 py-3">
+                    <td data-label="Product" className="px-4 py-3">
                       <p className="font-medium">
                         {item.product_name}
                       </p>
@@ -162,15 +162,15 @@ function SaleDetails({ sale, onClose, onReceipt }) {
                       </p>
                     </td>
 
-                    <td className="px-4 py-3">
+                    <td data-label="Quantity" className="px-4 py-3">
                       {item.quantity}
                     </td>
 
-                    <td className="px-4 py-3">
+                    <td data-label="Unit price" className="px-4 py-3">
                       {money(item.unit_price)}
                     </td>
 
-                    <td className="px-4 py-3 text-right font-medium">
+                    <td data-label="Total" className="px-4 py-3 text-right font-medium">
                       {money(item.line_total)}
                     </td>
                   </tr>
@@ -737,9 +737,9 @@ export default function Sales() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="responsive-table-wrap overflow-x-auto">
 
-            <table className="w-full min-w-[850px] text-left text-sm">
+            <table className="responsive-table w-full min-w-[850px] text-left text-sm">
 
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
@@ -760,7 +760,7 @@ export default function Sales() {
                     key={sale.id}
                     className="hover:bg-slate-50/70"
                   >
-                    <td className="px-5 py-4">
+                    <td data-label="Receipt / date" className="px-5 py-4">
                       <p className="font-semibold text-slate-900">
                         {sale.reference}
                       </p>
@@ -770,7 +770,7 @@ export default function Sales() {
                       </p>
                     </td>
 
-                    <td className="px-5 py-4">
+                    <td data-label="Customer" className="px-5 py-4">
                       <p className="font-medium text-slate-800">
                         {sale.customer_name || "Walk-in customer"}
                       </p>
@@ -780,7 +780,7 @@ export default function Sales() {
                       </p>
                     </td>
 
-                    <td className="px-5 py-4">
+                    <td data-label="Cashier / location" className="px-5 py-4">
                       <p className="font-medium text-slate-800">
                         {sale.cashier_name || "—"}
                       </p>
@@ -791,7 +791,7 @@ export default function Sales() {
                       </p>
                     </td>
 
-                    <td className="px-5 py-4">
+                    <td data-label="Payment" className="px-5 py-4">
                       <div className="flex flex-wrap gap-1">
                         {(sale.payments || []).map((payment) => (
                           <span
@@ -810,15 +810,15 @@ export default function Sales() {
                       </div>
                     </td>
 
-                    <td className="px-5 py-4 text-right font-bold text-slate-900">
+                    <td data-label="Total" className="px-5 py-4 text-right font-bold text-slate-900">
                       {money(sale.total_amount)}
                     </td>
 
-                    <td className="px-5 py-4">
+                    <td data-label="Status" className="px-5 py-4">
                       <StatusBadge status={sale.status} />
                     </td>
 
-                    <td className="px-5 py-4">
+                    <td data-mobile-action className="px-5 py-4">
                       <div className="flex justify-end gap-1">
                         {sale.status === "DRAFT" && (
                           <Link

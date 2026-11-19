@@ -302,8 +302,8 @@ export default function Inventory() {
             No stock balances found.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+          <div className="responsive-table-wrap overflow-x-auto">
+            <table className="responsive-table w-full text-left text-sm">
               <thead className="bg-gray-50 text-gray-500">
                 <tr>
                   <th className="px-5 py-3">Product</th>
@@ -330,15 +330,15 @@ export default function Inventory() {
 
                   return (
                     <tr key={item.id} className="hover:bg-gray-50">
-                      <td className="px-5 py-4 font-medium">
+                      <td data-label="Product" className="px-5 py-4 font-medium">
                         {getProductName(item.product)}
                       </td>
-                      <td className="px-5 py-4">
+                      <td data-label="Location" className="px-5 py-4">
                         {getLocationName(item.location)}
                       </td>
-                      <td className="px-5 py-4">{quantity}</td>
-                      <td className="px-5 py-4">{reserved}</td>
-                      <td className="px-5 py-4">
+                      <td data-label="Quantity" className="px-5 py-4">{quantity}</td>
+                      <td data-label="Reserved" className="px-5 py-4">{reserved}</td>
+                      <td data-label="Available" className="px-5 py-4">
                         <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${
                           available <= 0
                             ? "bg-red-100 text-red-700"
@@ -367,8 +367,8 @@ export default function Inventory() {
             No low-stock products reported by the backend.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+          <div className="responsive-table-wrap overflow-x-auto">
+            <table className="responsive-table w-full text-left text-sm">
               <thead className="bg-gray-50 text-gray-500">
                 <tr>
                   <th className="px-5 py-3">Product</th>
@@ -380,20 +380,20 @@ export default function Inventory() {
               <tbody className="divide-y">
                 {lowStock.map((item) => (
                   <tr key={item.id}>
-                    <td className="px-5 py-4 font-medium">
+                    <td data-label="Product" className="px-5 py-4 font-medium">
                       {getProductName(item.product)}
                     </td>
-                    <td className="px-5 py-4">
+                    <td data-label="Location" className="px-5 py-4">
                       {getLocationName(item.location)}
                     </td>
-                    <td className="px-5 py-4 text-red-600">
+                    <td data-label="Quantity" className="px-5 py-4 text-red-600">
                       {item.quantity_on_hand ??
                         item.quantity ??
                         item.quantity_available ??
                         item.available_quantity ??
                         0}
                     </td>
-                    <td className="px-5 py-4">
+                    <td data-label="Reorder level" className="px-5 py-4">
                       {item.reorder_level ?? item.product?.reorder_level ?? "-"}
                     </td>
                   </tr>
@@ -410,8 +410,8 @@ export default function Inventory() {
           <h2 className="font-semibold">Recent Stock Movements</h2>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+        <div className="responsive-table-wrap overflow-x-auto">
+          <table className="responsive-table w-full text-left text-sm">
             <thead className="bg-gray-50 text-gray-500">
               <tr>
                 <th className="px-5 py-3">Date</th>
@@ -425,22 +425,22 @@ export default function Inventory() {
             <tbody className="divide-y">
               {movements.slice(0, 10).map((movement) => (
                 <tr key={movement.id}>
-                  <td className="px-5 py-4">
+                  <td data-label="Date" className="px-5 py-4">
                     {movement.created_at
                       ? new Date(movement.created_at).toLocaleString("en-KE")
                       : "-"}
                   </td>
-                  <td className="px-5 py-4">
+                  <td data-label="Product" className="px-5 py-4">
                     {movement.product_name ||
                       getProductName(movement.product)}
                   </td>
-                  <td className="px-5 py-4">
+                  <td data-label="Type" className="px-5 py-4">
                     {movement.movement_type || movement.type || "-"}
                   </td>
-                  <td className="px-5 py-4 font-medium">
+                  <td data-label="Quantity" className="px-5 py-4 font-medium">
                     {movement.quantity_delta ?? movement.quantity ?? "-"}
                   </td>
-                  <td className="px-5 py-4">
+                  <td data-label="Location" className="px-5 py-4">
                     {movement.location_name ||
                       getLocationName(movement.location)}
                   </td>

@@ -196,7 +196,7 @@ export default function StoreSetup() {
   const activeItems = data[activeTab];
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Store Setup</h1>
@@ -371,7 +371,7 @@ export default function StoreSetup() {
                   className="mt-1 w-full rounded-lg border px-3 py-2.5 font-normal"
                 />
               </label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="block text-sm font-medium text-gray-700">
                   First name
                   <input

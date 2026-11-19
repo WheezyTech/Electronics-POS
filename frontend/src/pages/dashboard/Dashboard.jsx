@@ -564,7 +564,7 @@ export default function Dashboard() {
 
   if (isCashier) {
     return (
-      <div className="min-h-full bg-slate-50 p-4 md:p-6">
+      <div className="min-h-full bg-slate-50">
         <header className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-white p-5 shadow-sm">
           <div>
             <p className="text-sm font-semibold text-blue-700">Retail workspace</p>
@@ -605,8 +605,8 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-full bg-slate-50">
-      <header className="sticky top-0 z-20 flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
-        <div className="relative min-w-[220px] flex-1">
+      <header className="sticky top-14 z-20 flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-6 md:top-0">
+        <div className="relative min-w-0 flex-[1_1_100%] sm:min-w-[220px] sm:flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input
             value={productSearch}
@@ -645,7 +645,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main className="space-y-5 p-4 sm:p-6">
+      <main className="space-y-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-blue-700">Business overview</p>

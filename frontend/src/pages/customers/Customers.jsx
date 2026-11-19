@@ -234,8 +234,8 @@ export default function Customers() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+          <div className="responsive-table-wrap overflow-x-auto">
+            <table className="responsive-table w-full text-left text-sm">
               <thead className="bg-gray-50 text-gray-500">
                 <tr>
                   <th className="px-5 py-3 font-medium">Customer</th>
@@ -250,27 +250,27 @@ export default function Customers() {
               <tbody className="divide-y">
                 {filteredCustomers.map((customer, index) => (
                   <tr key={`${customer.phone}-${index}`} className="hover:bg-gray-50">
-                    <td className="px-5 py-4 font-medium text-gray-900">
+                    <td data-label="Customer" className="px-5 py-4 font-medium text-gray-900">
                       {customer.name}
                     </td>
 
-                    <td className="px-5 py-4 text-gray-600">
+                    <td data-label="Phone" className="px-5 py-4 text-gray-600">
                       {customer.phone}
                     </td>
 
-                    <td className="px-5 py-4">
+                    <td data-label="Purchases" className="px-5 py-4">
                       {customer.purchases}
                     </td>
 
-                    <td className="px-5 py-4 font-semibold text-gray-900">
+                    <td data-label="Total spent" className="px-5 py-4 font-semibold text-gray-900">
                       {formatMoney(customer.totalSpent)}
                     </td>
 
-                    <td className="px-5 py-4 text-gray-600">
+                    <td data-label="Last purchase" className="px-5 py-4 text-gray-600">
                       {formatDate(customer.lastPurchase)}
                     </td>
 
-                    <td className="px-5 py-4 text-right">
+                    <td data-mobile-action className="px-5 py-4 text-right">
                       <button
                         onClick={() => setSelectedCustomer(customer)}
                         className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-gray-100"
@@ -335,8 +335,8 @@ export default function Customers() {
             <div className="px-5 pb-5">
               <h3 className="mb-3 font-semibold">Sales History</h3>
 
-              <div className="overflow-x-auto rounded-lg border">
-                <table className="w-full text-left text-sm">
+              <div className="responsive-table-wrap overflow-x-auto rounded-lg border">
+                <table className="responsive-table w-full text-left text-sm">
                   <thead className="bg-gray-50 text-gray-500">
                     <tr>
                       <th className="px-4 py-3">Reference</th>
@@ -349,18 +349,18 @@ export default function Customers() {
                   <tbody className="divide-y">
                     {selectedCustomer.sales.map((sale) => (
                       <tr key={sale.id}>
-                        <td className="px-4 py-3">
+                        <td data-label="Reference" className="px-4 py-3">
                           {sale.reference || sale.id}
                         </td>
-                        <td className="px-4 py-3">
+                        <td data-label="Date" className="px-4 py-3">
                           {formatDate(sale.completed_at || sale.created_at)}
                         </td>
-                        <td className="px-4 py-3">
+                        <td data-label="Status" className="px-4 py-3">
                           <span className="rounded-full bg-gray-100 px-2 py-1 text-xs">
                             {sale.status}
                           </span>
                         </td>
-                        <td className="px-4 py-3 font-medium">
+                        <td data-label="Amount" className="px-4 py-3 font-medium">
                           {formatMoney(sale.total_amount)}
                         </td>
                       </tr>

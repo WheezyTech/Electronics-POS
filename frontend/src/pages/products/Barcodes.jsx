@@ -254,8 +254,8 @@ export default function Barcodes() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+          <div className="responsive-table-wrap overflow-x-auto">
+            <table className="responsive-table w-full text-left text-sm">
               <thead className="bg-gray-50 text-gray-500">
                 <tr>
                   <th className="px-5 py-3">Barcode</th>
@@ -272,21 +272,21 @@ export default function Barcodes() {
 
                   return (
                     <tr key={item.id} className="hover:bg-gray-50">
-                      <td className="px-5 py-4 font-mono font-medium">
+                      <td data-label="Barcode" className="px-5 py-4 font-mono font-medium">
                         {item.barcode}
                       </td>
-                      <td className="px-5 py-4">
+                      <td data-label="Product" className="px-5 py-4">
                         {product?.name || "Unknown product"}
                       </td>
-                      <td className="px-5 py-4">
+                      <td data-label="SKU" className="px-5 py-4">
                         {product?.sku || "-"}
                       </td>
-                      <td className="px-5 py-4">
+                      <td data-label="Type" className="px-5 py-4">
                         <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs text-blue-700">
                           {item.barcode_type || item.type || "-"}
                         </span>
                       </td>
-                      <td className="px-5 py-4 text-right">
+                      <td data-mobile-action className="px-5 py-4 text-right">
                         <button
                           onClick={() => deleteBarcode(item)}
                           className="rounded-lg border p-2 text-red-600 hover:bg-red-50"

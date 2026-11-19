@@ -65,11 +65,11 @@ export default function Settings() {
   };
 
   if (loading) {
-    return <div className="p-6">Loading settings...</div>;
+    return <div>Loading settings...</div>;
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">System Settings</h1>
         <p className="text-gray-500">

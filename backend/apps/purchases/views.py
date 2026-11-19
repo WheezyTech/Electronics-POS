@@ -37,6 +37,7 @@ from .serializers import (
 )
 
 from apps.inventory.models import StockMovement
+from apps.inventory.serializers import StockMovementSerializer
 from apps.inventory.services import change_stock
 
 from .models import (
@@ -628,8 +629,9 @@ class GoodsReceivedNoteViewSet(viewsets.ModelViewSet):
                 movement = change_stock(
                     product=order_item.product,
                     location=order.destination,
-                    quantity=item.quantity_received,
-                    movement_type="RECEIPT",
+                    quantity_delta=item.quantity_received,
+                    movement_type=StockMovement.MovementType.RECEIPT,
+                    user=request.user,
                     unit_cost=item.unit_cost,
                     reference=grn.reference,
                     notes=(
@@ -638,7 +640,6 @@ class GoodsReceivedNoteViewSet(viewsets.ModelViewSet):
                         f"Supplier delivery note: "
                         f"{grn.supplier_delivery_note}"
                     ),
-                    performed_by=request.user,
                 )
 
                 movements.append(movement)

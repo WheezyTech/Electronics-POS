@@ -393,8 +393,8 @@ export default function Shifts() {
       </div>
 
       <div className="overflow-hidden rounded-xl border bg-white">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[850px] text-left text-sm">
+        <div className="responsive-table-wrap overflow-x-auto">
+          <table className="responsive-table w-full min-w-[850px] text-left text-sm">
             <thead className="bg-gray-50 text-xs uppercase text-gray-500">
               <tr>
                 <th className="px-5 py-4">Cashier</th>
@@ -423,25 +423,25 @@ export default function Shifts() {
               ) : (
                 filteredShifts.map((shift) => (
                   <tr key={shift.id} className="hover:bg-gray-50">
-                    <td className="px-5 py-4 font-medium">
+                    <td data-label="Cashier" className="px-5 py-4 font-medium">
                       {shift.cashier_name || shift.cashier || "-"}
                     </td>
-                    <td className="px-5 py-4">
+                    <td data-label="Location" className="px-5 py-4">
                       {shift.location_name || shift.location || "-"}
                     </td>
-                    <td className="px-5 py-4 font-semibold">
+                    <td data-label="Opening cash" className="px-5 py-4 font-semibold">
                       {money(shift.opening_cash)}
                     </td>
-                    <td className="px-5 py-4 whitespace-nowrap">
+                    <td data-label="Opened" className="px-5 py-4 whitespace-nowrap">
                       {dateTime(shift.opened_at || shift.created_at)}
                     </td>
-                    <td className="px-5 py-4 whitespace-nowrap">
+                    <td data-label="Closed" className="px-5 py-4 whitespace-nowrap">
                       {dateTime(shift.closed_at)}
                     </td>
-                    <td className="px-5 py-4">
+                    <td data-label="Status" className="px-5 py-4">
                       <StatusBadge status={shift.status} />
                     </td>
-                    <td className="px-5 py-4 text-right">
+                    <td data-mobile-action className="px-5 py-4 text-right">
                       <button
                         onClick={() => viewShift(shift)}
                         className="rounded-lg border p-2 hover:bg-gray-100"

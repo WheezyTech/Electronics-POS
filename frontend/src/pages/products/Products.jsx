@@ -482,8 +482,8 @@ export default function Products() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+          <div className="responsive-table-wrap overflow-x-auto">
+            <table className="responsive-table w-full text-left text-sm">
               <thead className="bg-gray-50 text-gray-500">
                 <tr>
                   <th className="px-5 py-3">Product</th>
@@ -503,7 +503,7 @@ export default function Products() {
               <tbody className="divide-y">
                 {sortedProducts.map((product) => (
                   <tr key={product.id} className="hover:bg-gray-50">
-                    <td className="px-5 py-4">
+                    <td data-label="Product" className="px-5 py-4">
                       <p className="font-semibold text-gray-900">
                         {product.name}
                       </p>
@@ -512,35 +512,35 @@ export default function Products() {
                       </p>
                     </td>
 
-                    <td className="px-5 py-4">
+                    <td data-label="Brand" className="px-5 py-4">
                       {product.brand_name || product.brand?.name || "—"}
                     </td>
-                    <td className="px-5 py-4">
+                    <td data-label="Product type" className="px-5 py-4">
                       {product.product_type_name ||
                         product.product_type?.name ||
                         "—"}
                     </td>
-                    <td className="px-5 py-4">
+                    <td data-label="Category" className="px-5 py-4">
                       {product.category_name || product.category?.name || "—"}
                     </td>
-                    <td className="px-5 py-4">{product.sku}</td>
-                    <td className="px-5 py-4">
+                    <td data-label="SKU" className="px-5 py-4">{product.sku}</td>
+                    <td data-label="Barcode" className="px-5 py-4">
                       {product.barcodes?.find((item) => item.is_primary)
                         ?.barcode ||
                         product.barcodes?.[0]?.barcode ||
                         "—"}
                     </td>
-                    <td className="px-5 py-4">
+                    <td data-label="Cost price" className="px-5 py-4">
                       {formatMoney(product.cost_price)}
                     </td>
-                    <td className="px-5 py-4 font-semibold">
+                    <td data-label="Selling price" className="px-5 py-4 font-semibold">
                       {formatMoney(product.selling_price)}
                     </td>
-                    <td className="px-5 py-4">
+                    <td data-label="Warranty" className="px-5 py-4">
                       {product.warranty_months || 0} months
                     </td>
 
-                    <td className="px-5 py-4">
+                    <td data-label="Status" className="px-5 py-4">
                       <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${
                         product.is_active
                           ? "bg-green-100 text-green-700"
@@ -550,7 +550,7 @@ export default function Products() {
                       </span>
                     </td>
 
-                    <td className="px-5 py-4 text-right">
+                    <td data-mobile-action className="px-5 py-4 text-right">
                       <div className="flex justify-end gap-2">
                         <button
                           onClick={() => openEditForm(product)}

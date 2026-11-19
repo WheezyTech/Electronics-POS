@@ -465,8 +465,8 @@ export default function Returns() {
       </div>
 
       <div className="overflow-hidden rounded-xl border bg-white">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[750px] text-left text-sm">
+        <div className="responsive-table-wrap overflow-x-auto">
+          <table className="responsive-table w-full min-w-[750px] text-left text-sm">
             <thead className="bg-gray-50 text-xs uppercase text-gray-500">
               <tr>
                 <th className="px-5 py-4">Return reference</th>
@@ -495,17 +495,17 @@ export default function Returns() {
               ) : (
                 filteredReturns.map((item) => (
                   <tr key={item.id} className="hover:bg-gray-50">
-                    <td className="px-5 py-4 font-semibold text-blue-700">
+                    <td data-label="Return reference" className="px-5 py-4 font-semibold text-blue-700">
                       {item.reference}
                     </td>
-                    <td className="px-5 py-4">{item.sale_reference || item.sale}</td>
-                    <td className="px-5 py-4">{item.reason}</td>
-                    <td className="px-5 py-4 font-semibold">{money(item.refund_amount)}</td>
-                    <td className="px-5 py-4 whitespace-nowrap">{dateTime(item.created_at)}</td>
-                    <td className="px-5 py-4">
+                    <td data-label="Original sale" className="px-5 py-4">{item.sale_reference || item.sale}</td>
+                    <td data-label="Reason" className="px-5 py-4">{item.reason}</td>
+                    <td data-label="Refund" className="px-5 py-4 font-semibold">{money(item.refund_amount)}</td>
+                    <td data-label="Date" className="px-5 py-4 whitespace-nowrap">{dateTime(item.created_at)}</td>
+                    <td data-label="Status" className="px-5 py-4">
                       <StatusBadge status={item.status} />
                     </td>
-                    <td className="px-5 py-4 text-right">
+                    <td data-mobile-action className="px-5 py-4 text-right">
                       <button
                         onClick={() => openReturn(item)}
                         className="rounded-lg border p-2 hover:bg-gray-100"
@@ -628,8 +628,8 @@ export default function Returns() {
 
                   <div>
                     <h3 className="mb-3 font-semibold">Select returned products</h3>
-                    <div className="overflow-x-auto rounded-lg border">
-                      <table className="w-full min-w-[650px] text-sm">
+                    <div className="responsive-table-wrap overflow-x-auto rounded-lg border">
+                      <table className="responsive-table w-full min-w-[650px] text-sm">
                         <thead className="bg-gray-50">
                           <tr>
                             <th className="p-3 text-left">Product</th>
@@ -642,13 +642,13 @@ export default function Returns() {
                         <tbody className="divide-y">
                           {returnItems.map((item, index) => (
                             <tr key={item.sale_item}>
-                              <td className="p-3">
+                              <td data-label="Product" className="p-3">
                                 <p className="font-medium">{item.product_name}</p>
                                 <p className="text-xs text-gray-500">{item.sku}</p>
                               </td>
-                              <td className="p-3 text-right">{item.sold_quantity}</td>
-                              <td className="p-3 text-right">{money(item.unit_price)}</td>
-                              <td className="p-3 text-right">
+                              <td data-label="Sold quantity" className="p-3 text-right">{item.sold_quantity}</td>
+                              <td data-label="Unit price" className="p-3 text-right">{money(item.unit_price)}</td>
+                              <td data-label="Return quantity" className="p-3 text-right">
                                 <input
                                   type="number"
                                   min="0"
@@ -659,7 +659,7 @@ export default function Returns() {
                                   className="w-20 rounded border px-2 py-1 text-right"
                                 />
                               </td>
-                              <td className="p-3 text-right font-semibold">
+                              <td data-label="Refund" className="p-3 text-right font-semibold">
                                 {money(item.refund_amount)}
                               </td>
                             </tr>
@@ -742,8 +742,8 @@ export default function Returns() {
 
               <div>
                 <h3 className="mb-3 font-semibold">Returned items</h3>
-                <div className="overflow-x-auto rounded-lg border">
-                  <table className="w-full text-sm">
+                <div className="responsive-table-wrap overflow-x-auto rounded-lg border">
+                  <table className="responsive-table w-full text-sm">
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="p-3 text-left">Product</th>
@@ -755,10 +755,10 @@ export default function Returns() {
                     <tbody className="divide-y">
                       {(selectedReturn.items || []).map((item) => (
                         <tr key={item.id}>
-                          <td className="p-3">{item.product_name}</td>
-                          <td className="p-3 text-right">{item.quantity}</td>
-                          <td className="p-3 text-right">{money(item.unit_price)}</td>
-                          <td className="p-3 text-right font-semibold">{money(item.refund_amount)}</td>
+                          <td data-label="Product" className="p-3">{item.product_name}</td>
+                          <td data-label="Quantity" className="p-3 text-right">{item.quantity}</td>
+                          <td data-label="Unit price" className="p-3 text-right">{money(item.unit_price)}</td>
+                          <td data-label="Refund" className="p-3 text-right font-semibold">{money(item.refund_amount)}</td>
                         </tr>
                       ))}
                     </tbody>

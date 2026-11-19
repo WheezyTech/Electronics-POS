@@ -630,7 +630,10 @@ class SupplierReturnItemCreateSerializer(serializers.ModelSerializer):
         received_item = attrs["original_received_item"]
         quantity = attrs["quantity_returned"]
 
-        if received_item.grn_id != supplier_return.original_grn_id:
+        if (
+            received_item.goods_received_note_id
+            != supplier_return.original_grn_id
+        ):
             raise serializers.ValidationError(
                 "The selected received item does not belong to this return's GRN."
             )
