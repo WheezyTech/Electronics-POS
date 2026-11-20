@@ -1,6 +1,11 @@
-from django.contrib.auth.tokens import PasswordResetTokenGenerator
+
+import json
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
+
 from django.conf import settings
-from django.core.mail import send_mail
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.core.exceptions import ImproperlyConfigured
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
@@ -24,17 +29,62 @@ def _account_link(user, route, token):
     )
 
 
+def _send_resend_email(subject, message, recipient):
+    api_key = getattr(settings, "RESEND_API_KEY", "")
+
+    if not api_key:
+        raise ImproperlyConfigured(
+            "RESEND_API_KEY is missing from environment variables."
+        )
+
+    payload = {
+        "from": settings.DEFAULT_FROM_EMAIL,
+        "to": [recipient],
+        "subject": subject,
+        "text": message,
+    }
+
+    request = Request(
+        "https://api.resend.com/emails",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urlopen(request, timeout=30) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            return result
+
+    except HTTPError as error:
+        error_details = error.read().decode("utf-8", errors="replace")
+        raise RuntimeError(
+            f"Resend email delivery failed: {error_details}"
+        ) from error
+
+    except URLError as error:
+        raise RuntimeError(
+            f"Could not connect to Resend: {error.reason}"
+        ) from error
+
+
 def send_email_verification(user):
     token = email_verification_token.make_token(user)
     link = _account_link(user, "verify-email", token)
-    send_mail(
-        "Verify your Electronics POS email",
+
+    message = (
         f"Hello {user.username},\n\n"
         f"Verify your email address using this link:\n{link}\n\n"
-        "If you did not expect this message, contact your administrator.",
-        settings.DEFAULT_FROM_EMAIL,
-        [user.email],
-        fail_silently=False,
+        "If you did not expect this message, contact your administrator."
+    )
+
+    return _send_resend_email(
+        "Verify your Electronics POS email",
+        message,
+        user.email,
     )
 
 
@@ -43,12 +93,15 @@ def send_password_reset(user):
 
     token = default_token_generator.make_token(user)
     link = _account_link(user, "reset-password", token)
-    send_mail(
-        "Reset your Electronics POS password",
+
+    message = (
         f"Hello {user.username},\n\n"
         f"Reset your password using this link:\n{link}\n\n"
-        "If you did not request a reset, you can ignore this message.",
-        settings.DEFAULT_FROM_EMAIL,
-        [user.email],
-        fail_silently=False,
+        "If you did not request a reset, you can ignore this message."
+    )
+
+    return _send_resend_email(
+        "Reset your Electronics POS password",
+        message,
+        user.email,
     )
