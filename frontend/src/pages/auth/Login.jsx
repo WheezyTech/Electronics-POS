@@ -1,14 +1,15 @@
 
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Monitor, Lock, Mail } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { Lock, UserRound } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
+import webLogo from "../../../assets/branding/Electronics POS Web logo.png";
 
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -19,8 +20,12 @@ export default function Login() {
     setSubmitting(true);
 
     try {
-      await login(email, password);
-      navigate("/dashboard");
+      const response = await login(username, password);
+      navigate(
+        ["ACCOUNTANT", "AUDITOR"].includes(response.user?.role)
+          ? "/reports"
+          : "/dashboard"
+      );
     } catch (err) {
       setError(
         err.response?.data?.detail ||
@@ -34,16 +39,14 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-950 px-4">
+    <div className="login-page min-h-screen flex items-center justify-center bg-slate-950 px-4">
       <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-2xl">
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600 text-white">
-            <Monitor size={32} />
-          </div>
-
-          <h1 className="text-2xl font-bold text-slate-900">
-            Electronics POS
-          </h1>
+          <img
+            src={webLogo}
+            alt="Electronics POS — Sell, Manage, Grow"
+            className="mx-auto mb-4 w-72 max-w-full object-contain"
+          />
 
           <p className="mt-2 text-sm text-slate-500">
             Sign in to access your business dashboard
@@ -59,18 +62,19 @@ export default function Login() {
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-700">
-              Email address
+              Username
             </label>
 
             <div className="flex items-center rounded-lg border border-slate-300 px-3">
-              <Mail size={18} className="text-slate-400" />
+              <UserRound size={18} className="text-slate-400" />
 
               <input
-                type="email"
+                type="text"
                 required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Enter your email"
+                autoComplete="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Enter your username"
                 className="w-full border-0 bg-transparent p-3 outline-none"
               />
             </div>
@@ -103,6 +107,15 @@ export default function Login() {
             {submitting ? "Signing in..." : "Sign in"}
           </button>
         </form>
+
+        <div className="mt-4 text-center">
+          <Link
+            to="/forgot-password"
+            className="text-sm font-medium text-blue-700 hover:text-blue-800"
+          >
+            Forgot password?
+          </Link>
+        </div>
 
         <p className="mt-8 text-center text-xs text-slate-400">
           Electronics POS Management System

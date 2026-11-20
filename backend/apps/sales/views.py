@@ -12,6 +12,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.permissions import ReadOnlyStaffRoles
 from apps.inventory.models import StockMovement
 from apps.inventory.models import StockBalance
 from apps.inventory.services import change_stock
@@ -62,7 +63,7 @@ class SaleViewSet(viewsets.ModelViewSet):
         "items__product", "payments"
     )
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ReadOnlyStaffRoles]
     serializer_class = SaleSerializer
 
     def get_serializer_class(self):
@@ -77,7 +78,10 @@ class SaleViewSet(viewsets.ModelViewSet):
         if not (
             user.is_superuser
             or getattr(user, "role", "") in [
-                "ADMINISTRATOR", "STORE_MANAGER"
+                "ADMINISTRATOR",
+                "STORE_MANAGER",
+                "ACCOUNTANT",
+                "AUDITOR",
             ]
         ):
             queryset = queryset.filter(cashier=user)
@@ -285,6 +289,14 @@ class SaleViewSet(viewsets.ModelViewSet):
 
         payments = serializer.validated_data["payments"]
 
+        if sale.offline_authorization and any(
+            payment["payment_method"] != SalePayment.PaymentMethod.CASH
+            for payment in payments
+        ):
+            raise ValidationError(
+                "Offline-authorized sales can only be paid in cash."
+            )
+
         if any(
             payment["payment_method"] == SalePayment.PaymentMethod.MPESA
             for payment in payments
@@ -399,7 +411,7 @@ class SaleReturnViewSet(viewsets.ModelViewSet):
     queryset = SaleReturn.objects.select_related(
         "sale", "processed_by"
     ).prefetch_related("items", "refund_payments__processed_by")
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ReadOnlyStaffRoles]
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -592,7 +604,7 @@ class SaleReturnViewSet(viewsets.ModelViewSet):
         return Response(SaleReturnSerializer(sale_return).data)
 
 class CashierShiftViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ReadOnlyStaffRoles]
     serializer_class = CashierShiftSerializer
 
     def get_queryset(self):
@@ -602,7 +614,10 @@ class CashierShiftViewSet(viewsets.ModelViewSet):
 
         user = self.request.user
         if user.is_superuser or getattr(user, "role", "") in [
-            "ADMINISTRATOR", "STORE_MANAGER"
+            "ADMINISTRATOR",
+            "STORE_MANAGER",
+            "ACCOUNTANT",
+            "AUDITOR",
         ]:
             return queryset
 
@@ -868,7 +883,7 @@ class CashierShiftViewSet(viewsets.ModelViewSet):
 
 
 class MpesaInitiateAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ReadOnlyStaffRoles]
 
     def post(self, request):
         sale_id = request.data.get("sale_id")
@@ -1019,7 +1034,7 @@ class MpesaInitiateAPIView(APIView):
 
 
 class MpesaStatusAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ReadOnlyStaffRoles]
 
     def get(self, request, transaction_id):
         try:

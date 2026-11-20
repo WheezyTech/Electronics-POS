@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated
+from apps.accounts.permissions import ReadOnlyStaffRoles
 
 from .models import StockLocation, StockBalance, StockMovement
 from .serializers import (
@@ -41,7 +42,7 @@ class StockLocationViewSet(viewsets.ModelViewSet):
 
 class StockBalanceViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = StockBalanceSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ReadOnlyStaffRoles]
 
     def get_queryset(self):
         queryset = StockBalance.objects.select_related(
@@ -62,7 +63,7 @@ class StockBalanceViewSet(viewsets.ReadOnlyModelViewSet):
 
 class StockMovementViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = StockMovementSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ReadOnlyStaffRoles]
 
     def get_queryset(self):
         queryset = StockMovement.objects.select_related(
@@ -218,7 +219,7 @@ class StockTransferAPIView(APIView):
 
 class LowStockAPIView(ListAPIView):
     serializer_class = StockBalanceSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ReadOnlyStaffRoles]
 
     def get_queryset(self):
         available_expression = ExpressionWrapper(
@@ -304,7 +305,7 @@ class StocktakeListCreateAPIView(APIView):
 
 
 class StocktakeDetailAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ReadOnlyStaffRoles]
 
     def get(self, request, pk):
         try:

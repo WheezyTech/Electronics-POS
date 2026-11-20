@@ -33,6 +33,8 @@ class IsManagementUser(BasePermission):
                 or getattr(user, "role", "") in [
                     "ADMINISTRATOR",
                     "STORE_MANAGER",
+                    "ACCOUNTANT",
+                    "AUDITOR",
                 ]
             )
         )

@@ -1,20 +1,85 @@
 
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework.exceptions import AuthenticationFailed
+from rest_framework_simplejwt.serializers import (
+    TokenObtainPairSerializer,
+    TokenRefreshSerializer,
+)
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.exceptions import TokenError
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from django.utils import timezone
 
 from rest_framework import serializers
+
+from .authentication import get_active_device
+from .models import Device, OfflineAuthorization
 
 
 User = get_user_model()
 
 
-class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
-    email = serializers.EmailField(required=False, write_only=True)
+def get_current_offline_authorizations(user, device):
+    now = timezone.now()
+    grants = OfflineAuthorization.objects.filter(
+        user=user,
+        device=device,
+        granted_at__lte=now,
+        expires_at__gt=now,
+        revoked_at__isnull=True,
+    )
+    return [
+        {
+            "id": grant.id,
+            "operation": grant.operation,
+            "granted_at": grant.granted_at.isoformat(),
+            "expires_at": grant.expires_at.isoformat(),
+        }
+        for grant in grants
+    ]
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields[self.username_field].required = False
+
+class DeviceSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Device
+        fields = [
+            "id",
+            "sync_id",
+            "name",
+            "platform",
+            "registered_by",
+            "is_active",
+            "created_at",
+            "last_seen_at",
+            "deactivated_at",
+            "deactivated_by",
+        ]
+        read_only_fields = [
+            "id",
+            "sync_id",
+            "registered_by",
+            "is_active",
+            "created_at",
+            "last_seen_at",
+            "deactivated_at",
+            "deactivated_by",
+        ]
+
+    def create(self, validated_data):
+        return Device.objects.create(
+            registered_by=self.context["request"].user,
+            **validated_data,
+        )
+
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    device_sync_id = serializers.UUIDField(write_only=True)
+    device_name = serializers.CharField(max_length=100, write_only=True)
+    device_platform = serializers.ChoiceField(
+        choices=Device.Platform.choices,
+        write_only=True,
+    )
 
     @classmethod
     def get_token(cls, user):
@@ -27,26 +92,44 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         return token
 
     def validate(self, attrs):
-        email = attrs.pop('email', None)
-        if email is not None:
-            attrs[self.username_field] = (
-                User.objects.filter(email__iexact=email)
-                .values_list('username', flat=True)
-                .first()
-                or ''
-            )
-        elif not attrs.get(self.username_field):
-            raise serializers.ValidationError({
-                self.username_field: 'This field is required.'
-            })
-
         data = super().validate(attrs)
         user = self.user
+        device, _ = Device.objects.get_or_create(
+            sync_id=attrs["device_sync_id"],
+            defaults={
+                "name": attrs["device_name"],
+                "platform": attrs["device_platform"],
+                "registered_by": user,
+            },
+        )
+
+        if not device.is_active:
+            raise serializers.ValidationError({
+                "device_sync_id": "This device has been deactivated."
+            })
+
+        device.last_seen_at = timezone.now()
+        device.save(update_fields=["last_seen_at"])
+
+        refresh = RefreshToken(data["refresh"])
+        refresh["device_sync_id"] = str(device.sync_id)
+        data["refresh"] = str(refresh)
+        data["access"] = str(refresh.access_token)
+        data["device"] = {
+            "sync_id": str(device.sync_id),
+            "name": device.name,
+            "platform": device.platform,
+        }
+        data["offline_authorizations"] = get_current_offline_authorizations(
+            user,
+            device,
+        )
 
         data['user'] = {
             'id': user.id,
             'username': user.username,
             'email': user.email,
+            'email_verified': user.email_verified,
             'first_name': user.first_name,
             'last_name': user.last_name,
             'phone_number': user.phone_number,
@@ -56,6 +139,63 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         }
 
         return data
+
+
+class DeviceTokenRefreshSerializer(TokenRefreshSerializer):
+    def validate(self, attrs):
+        try:
+            refresh = self.token_class(attrs["refresh"])
+        except TokenError as exc:
+            raise serializers.ValidationError({
+                "refresh": "Token is invalid or expired."
+            }) from exc
+
+        try:
+            get_active_device(refresh.get("device_sync_id"))
+        except AuthenticationFailed as exc:
+            raise serializers.ValidationError({
+                "refresh": str(exc.detail)
+            }) from exc
+
+        return super().validate(attrs)
+
+
+class OfflineAuthorizationSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = OfflineAuthorization
+        fields = [
+            "id",
+            "user",
+            "device",
+            "operation",
+            "authorized_by",
+            "granted_at",
+            "expires_at",
+            "revoked_at",
+            "revoked_by",
+        ]
+        read_only_fields = [
+            "id",
+            "authorized_by",
+            "granted_at",
+            "expires_at",
+            "revoked_at",
+            "revoked_by",
+        ]
+
+    def validate(self, attrs):
+        user = attrs["user"]
+        device = attrs["device"]
+        if not user.is_active:
+            raise serializers.ValidationError(
+                {"user": "Inactive users cannot receive offline authorization."}
+            )
+        if not device.is_active:
+            raise serializers.ValidationError(
+                {"device": "Inactive devices cannot receive offline authorization."}
+            )
+        return attrs
 
 
 class UserManagementSerializer(serializers.ModelSerializer):
@@ -82,6 +222,7 @@ class UserManagementSerializer(serializers.ModelSerializer):
             'is_staff',
             'is_superuser',
             'created_at',
+            'email_verified',
         ]
 
         read_only_fields = [
@@ -89,6 +230,7 @@ class UserManagementSerializer(serializers.ModelSerializer):
             'is_staff',
             'is_superuser',
             'created_at',
+            'email_verified',
         ]
 
     def validate_role(self, value):
@@ -96,10 +238,15 @@ class UserManagementSerializer(serializers.ModelSerializer):
         if (
             request
             and request.user.role == User.Role.STORE_MANAGER
-            and value != User.Role.CASHIER
+            and value not in {
+                User.Role.CASHIER,
+                User.Role.ACCOUNTANT,
+                User.Role.AUDITOR,
+            }
         ):
             raise serializers.ValidationError(
-                'Store managers can only register cashier accounts.'
+                'Store managers can only register cashier, accountant, '
+                'or auditor accounts.'
             )
         return value
 
@@ -139,6 +286,7 @@ class UserManagementSerializer(serializers.ModelSerializer):
 
 
 class MyProfileSerializer(serializers.ModelSerializer):
+    offline_authorizations = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -151,6 +299,25 @@ class MyProfileSerializer(serializers.ModelSerializer):
             'last_name',
             'phone_number',
             'role',
+            'email_verified',
+            'offline_authorizations',
         ]
 
-        read_only_fields = ['id', 'username', 'role']
+        read_only_fields = [
+            'id',
+            'username',
+            'role',
+            'email_verified',
+        ]
+
+    def get_offline_authorizations(self, user):
+        request = self.context.get("request")
+        token = request.auth if request else None
+        device_sync_id = token.get("device_sync_id") if token else None
+        device = Device.objects.filter(
+            sync_id=device_sync_id,
+            is_active=True,
+        ).first()
+        if device is None:
+            return []
+        return get_current_offline_authorizations(user, device)

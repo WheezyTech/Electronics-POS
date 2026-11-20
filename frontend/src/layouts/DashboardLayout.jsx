@@ -1,10 +1,16 @@
 import { useState } from "react";
-import { Menu, Monitor } from "lucide-react";
+import { Menu } from "lucide-react";
 import { Outlet } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
+import CashierPinLock from "../components/CashierPinLock";
+import { useAuth } from "../context/AuthContext";
+import webLogo from "../../assets/branding/Electronics POS Web logo.png";
 
 export default function DashboardLayout() {
+  const { isLocked } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  if (isLocked) return <CashierPinLock />;
 
   return (
     <div className="flex h-dvh overflow-hidden bg-slate-100">
@@ -24,10 +30,11 @@ export default function DashboardLayout() {
             <Menu size={21} />
           </button>
           <div className="flex min-w-0 items-center gap-2">
-            <Monitor size={20} className="shrink-0 text-blue-700" />
-            <span className="truncate font-semibold text-slate-900">
-              Electronics POS
-            </span>
+            <img
+              src={webLogo}
+              alt="Electronics POS"
+              className="h-10 w-40 rounded bg-white object-contain"
+            />
           </div>
         </header>
 

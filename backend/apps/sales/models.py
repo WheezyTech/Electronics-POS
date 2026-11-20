@@ -30,6 +30,14 @@ class Sale(models.Model):
         related_name="sales"
     )
 
+    offline_authorization = models.ForeignKey(
+        "accounts.OfflineAuthorization",
+        on_delete=models.PROTECT,
+        related_name="sales",
+        null=True,
+        blank=True,
+    )
+
     location = models.ForeignKey(
         StockLocation,
         on_delete=models.PROTECT,
@@ -66,6 +74,7 @@ class Sale(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    client_completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]

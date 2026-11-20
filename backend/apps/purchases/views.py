@@ -18,6 +18,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
+from apps.accounts.permissions import ReadOnlyStaffRoles
 from .models import PurchaseOrder, PurchaseOrderItem
 from .serializers import (
     PurchaseOrderSerializer,
@@ -710,7 +711,7 @@ class SupplierReturnViewSet(viewsets.ModelViewSet):
     )
 
     serializer_class = SupplierReturnSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ReadOnlyStaffRoles]
 
     def get_serializer_class(self):
         if self.action == "create":

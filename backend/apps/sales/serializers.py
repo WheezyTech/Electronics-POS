@@ -9,8 +9,42 @@ from apps.products.models import Product
 from apps.inventory.models import StockBalance
 from apps.inventory.models import StockLocation
 from .models import CashierShift, CashMovement
+from apps.accounts.models import OfflineAuthorization
 
 User = get_user_model()
+
+
+def validate_offline_sale_authorization(
+    grant,
+    request,
+    occurred_at,
+):
+    if request is None:
+        raise serializers.ValidationError(
+            {
+                "offline_authorization": (
+                    "An authenticated device is required to use offline authorization."
+                )
+            }
+        )
+
+    token = request.auth
+    device_sync_id = token.get("device_sync_id") if token else None
+
+    if occurred_at is None or not grant.permits(
+        user=request.user,
+        device_sync_id=device_sync_id,
+        operation=OfflineAuthorization.Operation.CASH_SALE,
+        occurred_at=occurred_at,
+    ):
+        raise serializers.ValidationError(
+            {
+                "offline_authorization": (
+                    "The offline cash-sale authorization is invalid or expired."
+                )
+            }
+        )
+
 
 class SaleItemSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(
@@ -60,6 +94,12 @@ class SalePaymentSerializer(serializers.ModelSerializer):
 class SaleSerializer(serializers.ModelSerializer):
     items = SaleItemSerializer(many=True, read_only=True)
     payments = SalePaymentSerializer(many=True, read_only=True)
+    sync_status = serializers.SerializerMethodField()
+    offline_authorization = serializers.PrimaryKeyRelatedField(
+        queryset=OfflineAuthorization.objects.all(),
+        required=False,
+        allow_null=True,
+    )
     cashier_name = serializers.CharField(
         source="cashier.username",
         read_only=True
@@ -75,6 +115,7 @@ class SaleSerializer(serializers.ModelSerializer):
             "id",
             "reference",
             "cashier",
+            "offline_authorization",
             "cashier_name",
             "location",
             "location_name",
@@ -90,25 +131,84 @@ class SaleSerializer(serializers.ModelSerializer):
             "notes",
             "created_at",
             "completed_at",
+            "client_completed_at",
+            "sync_status",
         ]
         read_only_fields = [
-            "id", "reference", "cashier", "subtotal",
+            "id", "cashier", "subtotal",
             "total_amount", "status", "created_at",
             "completed_at",
         ]
 
+    def get_sync_status(self, obj):
+        return "SYNCED"
+
+    def validate_client_completed_at(self, value):
+        if self.instance and self.instance.status != Sale.Status.DRAFT:
+            raise serializers.ValidationError(
+                "Client completion time can only be set on a draft sale."
+            )
+        if (
+            self.instance
+            and self.instance.client_completed_at
+            and self.instance.client_completed_at != value
+        ):
+            raise serializers.ValidationError(
+                "Client completion time has already been recorded."
+            )
+        return value
+
+    def validate(self, attrs):
+        if (
+            self.instance
+            and "offline_authorization" in attrs
+            and self.instance.status != Sale.Status.DRAFT
+        ):
+            raise serializers.ValidationError(
+                "Offline authorization can only be recorded on a draft sale."
+            )
+
+        grant = attrs.get("offline_authorization")
+        if grant is not None:
+            request = self.context.get("request")
+            occurred_at = attrs.get(
+                "client_completed_at",
+                self.instance.client_completed_at if self.instance else None,
+            )
+            validate_offline_sale_authorization(
+                grant,
+                request,
+                occurred_at,
+            )
+        return attrs
+
 
 class SaleCreateSerializer(serializers.ModelSerializer):
+    offline_authorization = serializers.PrimaryKeyRelatedField(
+        queryset=OfflineAuthorization.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+
+    reference = serializers.CharField(
+        max_length=50,
+        required=False,
+        write_only=True,
+    )
+
     class Meta:
         model = Sale
         fields = [
             "id",
+            "reference",
             "location",
             "customer_name",
             "customer_phone",
             "discount_amount",
             "tax_amount",
             "notes",
+            "client_completed_at",
+            "offline_authorization",
         ]
         read_only_fields = ["id"]
 
@@ -128,10 +228,31 @@ class SaleCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "Tax cannot be negative."
             )
+        grant = attrs.get("offline_authorization")
+        if grant is not None:
+            validate_offline_sale_authorization(
+                grant,
+                self.context.get("request"),
+                attrs.get("client_completed_at"),
+            )
         return attrs
 
     def create(self, validated_data):
-        validated_data["cashier"] = self.context["request"].user
+        user = self.context["request"].user
+        reference = validated_data.get("reference")
+        validated_data["cashier"] = user
+
+        if reference:
+            sale, created = Sale.objects.get_or_create(
+                reference=reference,
+                defaults=validated_data,
+            )
+            if not created and sale.cashier_id != user.pk:
+                raise serializers.ValidationError(
+                    "This receipt reference is already in use."
+                )
+            return sale
+
         return super().create(validated_data)
 
 

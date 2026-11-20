@@ -1,6 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from apps.accounts.permissions import ReadOnlyStaffRoles
 from rest_framework import status
 
 from .models import BusinessSettings
@@ -9,7 +10,7 @@ from .permissions import IsAdministrator
 
 
 class BusinessSettingsAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ReadOnlyStaffRoles]
 
     def get_settings(self):
         settings, created = BusinessSettings.objects.get_or_create(

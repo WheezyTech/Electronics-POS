@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Edit, Plus, RefreshCw, Users, X } from "lucide-react";
 import api from "../../api/axios";
+import { useAuth } from "../../context/AuthContext";
 
 const tabs = [
-  { id: "cashiers", label: "Cashiers" },
+  { id: "users", label: "Team Members" },
   { id: "categories", label: "Categories" },
   { id: "product-types", label: "Product Types" },
   { id: "brands", label: "Brands" },
@@ -17,13 +18,14 @@ const catalogLabels = {
   units: "unit",
 };
 
-const emptyCashier = {
+const emptyUser = {
   username: "",
   email: "",
   first_name: "",
   last_name: "",
   phone_number: "",
   password: "",
+  role: "CASHIER",
 };
 
 const emptyCatalogItem = {
@@ -52,7 +54,7 @@ function getErrorMessage(error, fallback) {
 }
 
 async function fetchStoreData() {
-  const [cashiers, categories, productTypes, brands, units] = await Promise.all([
+  const [users, categories, productTypes, brands, units] = await Promise.all([
     api.get("/auth/users/"),
     api.get("/products/categories/"),
     api.get("/products/product-types/"),
@@ -61,9 +63,7 @@ async function fetchStoreData() {
   ]);
 
   return {
-    cashiers: getList(cashiers.data).filter(
-      (user) => user.role === "CASHIER"
-    ),
+    users: getList(users.data),
     categories: getList(categories.data),
     "product-types": getList(productTypes.data),
     brands: getList(brands.data),
@@ -72,15 +72,19 @@ async function fetchStoreData() {
 }
 
 export default function StoreSetup() {
-  const [activeTab, setActiveTab] = useState("cashiers");
+  const { user } = useAuth();
+  const availableRoles = user?.role === "STORE_MANAGER"
+    ? ["CASHIER", "ACCOUNTANT", "AUDITOR"]
+    : ["STORE_MANAGER", "CASHIER", "ACCOUNTANT", "AUDITOR"];
+  const [activeTab, setActiveTab] = useState("users");
   const [data, setData] = useState({
-    cashiers: [],
+    users: [],
     categories: [],
     "product-types": [],
     brands: [],
     units: [],
   });
-  const [cashierForm, setCashierForm] = useState(emptyCashier);
+  const [userForm, setUserForm] = useState(emptyUser);
   const [catalogForm, setCatalogForm] = useState(emptyCatalogItem);
   const [editingItem, setEditingItem] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -125,9 +129,9 @@ export default function StoreSetup() {
     };
   }, []);
 
-  const handleCashierChange = (event) => {
+  const handleUserChange = (event) => {
     const { name, value } = event.target;
-    setCashierForm((previous) => ({ ...previous, [name]: value }));
+    setUserForm((previous) => ({ ...previous, [name]: value }));
   };
 
   const handleCatalogChange = (event) => {
@@ -142,17 +146,16 @@ export default function StoreSetup() {
     setMessage("");
 
     try {
-      if (activeTab === "cashiers") {
+      if (activeTab === "users") {
         const response = await api.post("/auth/users/", {
-          ...cashierForm,
-          role: "CASHIER",
+          ...userForm,
         });
         setData((previous) => ({
           ...previous,
-          cashiers: [response.data, ...previous.cashiers],
+          users: [response.data, ...previous.users],
         }));
-        setCashierForm(emptyCashier);
-        setMessage("Cashier account registered successfully.");
+        setUserForm(emptyUser);
+        setMessage("Account created. A verification link was sent to the user’s email.");
       } else {
         const payload = {
           name: catalogForm.name,
@@ -192,7 +195,7 @@ export default function StoreSetup() {
     }
   };
 
-  const isCashiersTab = activeTab === "cashiers";
+  const isUsersTab = activeTab === "users";
   const activeItems = data[activeTab];
 
   return (
@@ -201,7 +204,7 @@ export default function StoreSetup() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Store Setup</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Register cashiers and manage product categories, types, brands, and units.
+            Register team members and manage product categories, types, brands, and units.
           </p>
         </div>
         <button
@@ -252,9 +255,9 @@ export default function StoreSetup() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
         <section className="rounded-xl border bg-white p-5">
           <div className="mb-4 flex items-center gap-2">
-            {isCashiersTab ? <Users size={19} /> : <Plus size={19} />}
+            {isUsersTab ? <Users size={19} /> : <Plus size={19} />}
             <h2 className="font-semibold">
-              {isCashiersTab ? "Registered cashiers" : `Existing ${activeTab}`}
+              {isUsersTab ? "Registered team members" : `Existing ${activeTab}`}
             </h2>
           </div>
 
@@ -264,24 +267,27 @@ export default function StoreSetup() {
             <p className="py-8 text-center text-sm text-gray-500">
               No {tabs.find((tab) => tab.id === activeTab).label.toLowerCase()} have been added yet.
             </p>
-          ) : isCashiersTab ? (
+          ) : isUsersTab ? (
             <div className="divide-y">
-              {activeItems.map((cashier) => (
-                <div key={cashier.id} className="flex justify-between gap-4 py-3">
+              {activeItems.map((teamMember) => (
+                <div key={teamMember.id} className="flex justify-between gap-4 py-3">
                   <div>
                     <p className="font-medium text-gray-900">
-                      {[cashier.first_name, cashier.last_name].filter(Boolean).join(" ") || cashier.username}
+                      {[teamMember.first_name, teamMember.last_name].filter(Boolean).join(" ") || teamMember.username}
                     </p>
                     <p className="text-sm text-gray-500">
-                      {cashier.email} · @{cashier.username}
+                      {teamMember.email} · @{teamMember.username} · {teamMember.role}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {teamMember.email_verified ? "Email verified" : "Email not verified"}
                     </p>
                   </div>
                   <span className={`h-fit rounded-full px-2.5 py-1 text-xs ${
-                    cashier.is_active
+                    teamMember.is_active
                       ? "bg-green-100 text-green-700"
                       : "bg-gray-100 text-gray-600"
                   }`}>
-                    {cashier.is_active ? "Active" : "Inactive"}
+                    {teamMember.is_active ? "Active" : "Inactive"}
                   </span>
                 </div>
               ))}
@@ -341,20 +347,20 @@ export default function StoreSetup() {
 
         <form onSubmit={handleSubmit} className="h-fit space-y-4 rounded-xl border bg-white p-5">
           <h2 className="font-semibold">
-            {isCashiersTab
-              ? "Register a cashier"
+            {isUsersTab
+              ? "Register a team member"
               : `${editingItem ? "Edit" : "Add"} ${catalogLabels[activeTab]}`}
           </h2>
 
-          {isCashiersTab ? (
+          {isUsersTab ? (
             <>
               <label className="block text-sm font-medium text-gray-700">
                 Username
                 <input
                   required
                   name="username"
-                  value={cashierForm.username}
-                  onChange={handleCashierChange}
+                  value={userForm.username}
+                  onChange={handleUserChange}
                   autoComplete="username"
                   className="mt-1 w-full rounded-lg border px-3 py-2.5 font-normal"
                 />
@@ -365,8 +371,8 @@ export default function StoreSetup() {
                   required
                   type="email"
                   name="email"
-                  value={cashierForm.email}
-                  onChange={handleCashierChange}
+                  value={userForm.email}
+                  onChange={handleUserChange}
                   autoComplete="email"
                   className="mt-1 w-full rounded-lg border px-3 py-2.5 font-normal"
                 />
@@ -376,8 +382,8 @@ export default function StoreSetup() {
                   First name
                   <input
                     name="first_name"
-                    value={cashierForm.first_name}
-                    onChange={handleCashierChange}
+                    value={userForm.first_name}
+                    onChange={handleUserChange}
                     className="mt-1 w-full rounded-lg border px-3 py-2.5 font-normal"
                   />
                 </label>
@@ -385,8 +391,8 @@ export default function StoreSetup() {
                   Last name
                   <input
                     name="last_name"
-                    value={cashierForm.last_name}
-                    onChange={handleCashierChange}
+                    value={userForm.last_name}
+                    onChange={handleUserChange}
                     className="mt-1 w-full rounded-lg border px-3 py-2.5 font-normal"
                   />
                 </label>
@@ -395,8 +401,8 @@ export default function StoreSetup() {
                 Phone number
                 <input
                   name="phone_number"
-                  value={cashierForm.phone_number}
-                  onChange={handleCashierChange}
+                  value={userForm.phone_number}
+                  onChange={handleUserChange}
                   className="mt-1 w-full rounded-lg border px-3 py-2.5 font-normal"
                 />
               </label>
@@ -406,14 +412,30 @@ export default function StoreSetup() {
                   required
                   type="password"
                   name="password"
-                  value={cashierForm.password}
-                  onChange={handleCashierChange}
+                  value={userForm.password}
+                  onChange={handleUserChange}
                   autoComplete="new-password"
                   className="mt-1 w-full rounded-lg border px-3 py-2.5 font-normal"
                 />
               </label>
+              <label className="block text-sm font-medium text-gray-700">
+                Account role
+                <select
+                  required
+                  name="role"
+                  value={userForm.role}
+                  onChange={handleUserChange}
+                  className="mt-1 w-full rounded-lg border px-3 py-2.5 font-normal"
+                >
+                  {availableRoles.map((role) => (
+                    <option key={role} value={role}>
+                      {role.replaceAll("_", " ")}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <p className="text-xs text-gray-500">
-                New accounts are created with the cashier role.
+                An email verification link will be sent before password recovery is enabled.
               </p>
             </>
           ) : (
@@ -466,7 +488,7 @@ export default function StoreSetup() {
             </>
           )}
 
-          {!isCashiersTab && editingItem && (
+          {!isUsersTab && editingItem && (
             <button
               type="button"
               onClick={() => {
@@ -490,8 +512,8 @@ export default function StoreSetup() {
             <Plus size={16} />
             {saving
               ? "Saving..."
-              : isCashiersTab
-                ? "Register cashier"
+              : isUsersTab
+                ? "Register account"
                 : editingItem
                   ? "Save changes"
                   : "Add"}

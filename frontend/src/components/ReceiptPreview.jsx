@@ -1,5 +1,11 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Printer, X } from "lucide-react";
+import {
+  getPairedBluetoothPrinters,
+  isAndroidNative,
+  printBluetoothReceipt,
+} from "../api/bluetoothPrinter";
+import receiptLogo from "../../assets/branding/Electronics POS Receipt logo.png";
 
 const money = (value) =>
   new Intl.NumberFormat("en-KE", {
@@ -17,15 +23,146 @@ const dateTime = (value) => {
   });
 };
 
+async function getReceiptLogoBase64() {
+  const response = await fetch(receiptLogo);
+  if (!response.ok) {
+    throw new Error("Unable to load the receipt logo for printing.");
+  }
+
+  const blob = await response.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1]);
+    reader.onerror = () => reject(new Error("Unable to read the receipt logo."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function thermalReceiptText(sale) {
+  const status =
+    sale.sync_status === "PENDING" ? "PENDING SYNC" : "SYNCHRONIZED";
+  const lines = [
+    "SALES RECEIPT",
+    `Receipt: ${sale.reference}`,
+    `Sync status: ${status}`,
+    dateTime(
+      sale.client_completed_at || sale.completed_at || sale.created_at
+    ),
+    `Cashier: ${sale.cashier_name || "—"}`,
+    `Location: ${sale.location_name || "—"}`,
+    `Customer: ${sale.customer_name || "Walk-in customer"}`,
+  ];
+
+  if (sale.customer_phone) lines.push(`Phone: ${sale.customer_phone}`);
+  lines.push("--------------------------------");
+
+  (sale.items || []).forEach((item) => {
+    lines.push(String(item.product_name || "").slice(0, 32));
+    lines.push(
+      `${item.quantity} x ${money(item.unit_price)}  ${money(item.line_total)}`
+    );
+    if (item.sku) lines.push(`SKU: ${item.sku}`);
+  });
+
+  lines.push(
+    "--------------------------------",
+    `Subtotal: ${money(sale.subtotal)}`,
+    `Discount: ${money(sale.discount_amount)}`,
+    `Tax: ${money(sale.tax_amount)}`,
+    `TOTAL: ${money(sale.total_amount)}`,
+    "PAYMENT(S)"
+  );
+  (sale.payments || []).forEach((payment) => {
+    lines.push(`${payment.payment_method}: ${money(payment.amount)}`);
+  });
+  lines.push("", "THANK YOU FOR SHOPPING WITH US", "");
+
+  return lines
+    .map((line) => line.replace(/\u00a0/g, " "))
+    .join("\n");
+}
+
 export default function ReceiptPreview({ sale, onClose, autoPrint = false }) {
+  const [pairedPrinters, setPairedPrinters] = useState([]);
+  const [selectedPrinter, setSelectedPrinter] = useState(
+    () => localStorage.getItem("receipt_printer_address") || ""
+  );
+  const [showPrinterPicker, setShowPrinterPicker] = useState(false);
+  const [printing, setPrinting] = useState(false);
+  const [printError, setPrintError] = useState("");
+
+  const printReceipt = useCallback(async () => {
+    setPrintError("");
+    if (!isAndroidNative()) {
+      window.print();
+      return;
+    }
+
+    try {
+      const { devices } = await getPairedBluetoothPrinters();
+      setPairedPrinters(devices || []);
+      const rememberedPrinter = (devices || []).find(
+        (printer) => printer.address === selectedPrinter
+      );
+      if (!rememberedPrinter) {
+        setSelectedPrinter("");
+        setShowPrinterPicker(true);
+        return;
+      }
+
+      setPrinting(true);
+      await printBluetoothReceipt(
+        rememberedPrinter.address,
+        thermalReceiptText(sale),
+        await getReceiptLogoBase64()
+      );
+    } catch (error) {
+      setPrintError(
+        error.message || "Unable to connect to the Bluetooth printer."
+      );
+    } finally {
+      setPrinting(false);
+    }
+  }, [sale, selectedPrinter]);
+
+  const printToSelectedPrinter = async () => {
+    if (!selectedPrinter) {
+      setPrintError("Select a paired Bluetooth printer first.");
+      return;
+    }
+
+    setPrinting(true);
+    setPrintError("");
+    try {
+      await printBluetoothReceipt(
+        selectedPrinter,
+        thermalReceiptText(sale),
+        await getReceiptLogoBase64()
+      );
+      localStorage.setItem("receipt_printer_address", selectedPrinter);
+      setShowPrinterPicker(false);
+    } catch (error) {
+      setPrintError(
+        error.message || "Unable to connect to the Bluetooth printer."
+      );
+    } finally {
+      setPrinting(false);
+    }
+  };
+
+  const printReceiptRef = useRef(printReceipt);
+  useEffect(() => {
+    printReceiptRef.current = printReceipt;
+  }, [printReceipt]);
+
   useEffect(() => {
     if (!autoPrint) return undefined;
 
-    const printTimer = window.setTimeout(() => window.print(), 250);
+    const printTimer = window.setTimeout(() => {
+      printReceiptRef.current();
+    }, 250);
     return () => window.clearTimeout(printTimer);
   }, [autoPrint, sale.reference]);
-
-  const printReceipt = () => window.print();
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/60 p-4">
@@ -38,15 +175,27 @@ export default function ReceiptPreview({ sale, onClose, autoPrint = false }) {
             <p className="text-sm text-slate-500">
               {sale.reference}
             </p>
+            <p
+              className={`text-xs font-semibold ${
+                sale.sync_status === "PENDING"
+                  ? "text-amber-700"
+                  : "text-emerald-700"
+              }`}
+            >
+              {sale.sync_status === "PENDING"
+                ? "Pending synchronization"
+                : "Synchronized"}
+            </p>
           </div>
 
           <div className="flex gap-2">
             <button
               onClick={printReceipt}
+              disabled={printing}
               className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
             >
               <Printer size={16} />
-              Print
+              {printing ? "Printing..." : "Print"}
             </button>
 
             <button
@@ -58,15 +207,58 @@ export default function ReceiptPreview({ sale, onClose, autoPrint = false }) {
           </div>
         </div>
 
+        {isAndroidNative() && showPrinterPicker && (
+          <div className="space-y-3 border-b bg-slate-50 px-5 py-4 print:hidden">
+            <p className="text-sm font-semibold text-slate-800">
+              Choose a paired ESC/POS Bluetooth printer.
+            </p>
+            {!pairedPrinters.length && (
+              <p className="text-sm text-slate-600">
+                Pair and enable the printer in Android Bluetooth settings, then try printing again.
+              </p>
+            )}
+            <select
+              value={selectedPrinter}
+              onChange={(event) => setSelectedPrinter(event.target.value)}
+              className="w-full rounded-lg border border-slate-300 bg-white p-2 text-sm"
+            >
+              <option value="">Select paired printer</option>
+              {pairedPrinters.map((printer) => (
+                <option key={printer.address} value={printer.address}>
+                  {printer.name || "Bluetooth printer"} ({printer.address})
+                </option>
+              ))}
+            </select>
+            {printError && (
+              <p role="alert" className="text-sm text-red-700">{printError}</p>
+            )}
+            <button
+              type="button"
+              onClick={printToSelectedPrinter}
+              disabled={printing || !selectedPrinter}
+              className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {printing ? "Printing..." : "Print receipt"}
+            </button>
+          </div>
+        )}
+
+        {printError && !showPrinterPicker && (
+          <p role="alert" className="px-5 py-3 text-sm text-red-700 print:hidden">
+            {printError}
+          </p>
+        )}
+
         <div
           id="thermal-receipt"
           className="mx-auto w-full max-w-[360px] px-5 py-6 font-mono text-xs text-black"
         >
           <div className="text-center">
-            <h1 className="text-base font-bold">
-              ELECTRONICS POS
-            </h1>
-
+            <img
+              src={receiptLogo}
+              alt="Electronics POS"
+              className="mx-auto mb-3 w-full object-contain"
+            />
             <p>SALES RECEIPT</p>
 
             <p className="mt-2 break-all font-bold">
@@ -74,7 +266,16 @@ export default function ReceiptPreview({ sale, onClose, autoPrint = false }) {
             </p>
 
             <p>
-              {dateTime(sale.completed_at || sale.created_at)}
+              {dateTime(
+                sale.client_completed_at ||
+                sale.completed_at ||
+                sale.created_at
+              )}
+            </p>
+            <p className="font-bold">
+              {sale.sync_status === "PENDING"
+                ? "PENDING SYNCHRONIZATION"
+                : "SYNCHRONIZED"}
             </p>
           </div>
 

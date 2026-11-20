@@ -2,6 +2,16 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import api from "../../api/axios";
+import {
+  cacheLocations,
+  cacheProducts,
+  getCachedLocations,
+  getCachedProducts,
+  savePendingSale,
+  syncPendingSales,
+} from "../../api/offlineSales";
+import { createReceiptReference } from "../../api/deviceIdentity";
+import { useAuth } from "../../context/AuthContext";
 import ReceiptPreview from "../../components/ReceiptPreview";
 import {
   Search, ScanBarcode, Plus, Minus, Trash2,
@@ -17,7 +27,33 @@ function getProduct(data) {
   return data?.product || data?.data?.product || data?.data || data;
 }
 
+function filterCachedProducts(products, filters) {
+  return products.filter((product) => {
+    const contains = (field, value) =>
+      !value || String(product[field] || "").toLowerCase().includes(value);
+    const searchMatches =
+      !filters.search ||
+      ["name", "sku", "model_number"].some((field) =>
+        contains(field, filters.search)
+      );
+
+    return (
+      searchMatches &&
+      contains("sku", filters.sku) &&
+      contains("model_number", filters.model) &&
+      (!filters.category || String(product.category) === filters.category) &&
+      (!filters.productType ||
+        String(product.product_type) === filters.productType) &&
+      (!filters.brand || String(product.brand) === filters.brand) &&
+      (!filters.unit || String(product.unit) === filters.unit) &&
+      (!filters.inStockOnly ||
+        Number(product.location_quantity_available || 0) > 0)
+    );
+  });
+}
+
 export default function POS() {
+  const { user } = useAuth();
   const routeLocation = useLocation();
   const navigate = useNavigate();
   const initialCart = routeLocation.state?.initialCart;
@@ -81,6 +117,9 @@ export default function POS() {
           (item) => item.is_active
         );
         setLocations(activeLocations);
+        cacheLocations(activeLocations).catch(() => {
+          setError("Stock locations loaded but could not be cached for offline use.");
+        });
 
         if (!draftSaleId) {
           const defaultLocation = activeLocations.find(
@@ -94,8 +133,69 @@ export default function POS() {
           }
         }
       })
-      .catch(() => setError("Unable to load stock locations."));
+      .catch(async () => {
+        try {
+          const cachedLocations = (await getCachedLocations()).filter(
+            (item) => item.is_active
+          );
+          setLocations(cachedLocations);
+          if (!draftSaleId && cachedLocations.length) {
+            const defaultLocation = cachedLocations.find(
+              (item) => item.is_default
+            );
+            setLocation((current) =>
+              current ||
+              String(defaultLocation?.id || cachedLocations[0].id)
+            );
+          } else if (!cachedLocations.length) {
+            setError("No cached stock locations are available offline.");
+          }
+        } catch {
+          setError("Unable to load stock locations or their offline cache.");
+        }
+      });
   }, [draftSaleId]);
+
+  useEffect(() => {
+    let active = true;
+
+    const syncOfflineSales = async () => {
+      try {
+        const { synced, failed } = await syncPendingSales(api);
+        if (!active) return;
+        if (synced.length) {
+          setMessage(
+            `${synced.length} offline sale${synced.length === 1 ? "" : "s"} synchronized.`
+          );
+        }
+        if (failed.length) {
+          setError(
+            `${failed.length} offline sale${failed.length === 1 ? "" : "s"} remain pending synchronization.`
+          );
+        }
+      } catch {
+        if (active) {
+          setError("Unable to read the saved offline sales queue.");
+        }
+      }
+    };
+
+    const onSaleSynced = (event) => {
+      if (event.detail.reference === receiptSale?.reference) {
+        setReceiptSale(event.detail.receipt);
+      }
+    };
+
+    window.addEventListener("online", syncOfflineSales);
+    window.addEventListener("offline-sale-synced", onSaleSynced);
+    syncOfflineSales();
+
+    return () => {
+      active = false;
+      window.removeEventListener("online", syncOfflineSales);
+      window.removeEventListener("offline-sale-synced", onSaleSynced);
+    };
+  }, [receiptSale?.reference]);
 
   useEffect(() => {
     Promise.all([
@@ -206,14 +306,53 @@ export default function POS() {
       if (brandFilter) params.brand = brandFilter;
       if (unitFilter) params.unit = unitFilter;
 
+      const filters = {
+        search: search.trim().toLowerCase(),
+        sku: skuFilter.trim().toLowerCase(),
+        model: modelFilter.trim().toLowerCase(),
+        category: categoryFilter,
+        productType: productTypeFilter,
+        brand: brandFilter,
+        unit: unitFilter,
+        inStockOnly,
+      };
+      const loadCachedResults = async () => {
+        const cached = await getCachedProducts(location);
+        if (active) {
+          setProducts(filterCachedProducts(cached, filters));
+        }
+      };
+
+      if (!navigator.onLine) {
+        loadCachedResults().catch(() => {
+          if (active) setError("Unable to read cached products for this location.");
+        });
+        return;
+      }
+
       api.get("/products/products/", {
         params
       })
         .then((response) => {
-          if (active) setProducts(getList(response.data));
+          const foundProducts = getList(response.data);
+          if (active) setProducts(foundProducts);
+          cacheProducts(location, foundProducts).catch(() => {
+            if (active) {
+              setError("Products loaded but could not be cached for offline use.");
+            }
+          });
         })
-        .catch(() => {
-          if (active) setError("Unable to search products.");
+        .catch(async (err) => {
+          if (!active) return;
+          if (err.code === "ERR_NETWORK" || !navigator.onLine) {
+            try {
+              await loadCachedResults();
+            } catch {
+              setError("Unable to search products or read their offline cache.");
+            }
+          } else {
+            setError("Unable to search products.");
+          }
         });
     }, 300);
 
@@ -348,7 +487,11 @@ export default function POS() {
 
   const buildReceipt = (sale) => {
     setReceiptSale(sale);
-    setMessage(`Sale completed successfully. Reference: ${sale.reference || sale.id}`);
+    setMessage(
+      sale.sync_status === "PENDING"
+        ? `Sale saved offline. Receipt ${sale.reference} is pending synchronization.`
+        : `Sale completed successfully. Reference: ${sale.reference || sale.id}`
+    );
     setCart([]);
     setCustomerName("");
     setCustomerPhone("");
@@ -369,6 +512,78 @@ export default function POS() {
     if (routeLocation.state?.draftSaleId) {
       navigate("/pos", { replace: true, state: null });
     }
+  };
+
+  const storeOfflineSale = async (reference, remoteSaleId) => {
+    if (paymentMethod !== "CASH") {
+      throw new Error(
+        "Only cash sales can be completed offline. Other payment methods require a connection."
+      );
+    }
+
+    const now = new Date().toISOString();
+    const offlineAuthorization = (user?.offline_authorizations || []).find(
+      (authorization) =>
+        authorization.operation === "CASH_SALE" &&
+        Date.parse(authorization.granted_at) <= Date.now() &&
+        Date.parse(authorization.expires_at) > Date.now()
+    );
+    if (!offlineAuthorization) {
+      throw new Error(
+        "This cashier or device has no current authorization for offline cash sales."
+      );
+    }
+
+    const items = cart.map((item) => ({
+      id: item.saleItemId || item.id,
+      product: item.id,
+      product_name: item.name,
+      sku: item.sku,
+      quantity: item.quantity,
+      unit_price: item.price,
+      discount_amount: Number(item.discountAmount || 0),
+      line_total:
+        item.price * item.quantity -
+        Number(item.discountAmount || 0),
+    }));
+    const subtotal = items.reduce(
+      (sum, item) => sum + Number(item.line_total),
+      0
+    );
+    const pendingSale = {
+      id: remoteSaleId || reference,
+      reference,
+      remote_sale_id: remoteSaleId || null,
+      location: Number(location),
+      location_name:
+        locations.find((item) => String(item.id) === String(location))?.name ||
+        "—",
+      cashier_name: user?.username || "—",
+      customer_name: customerName,
+      customer_phone: customerPhone,
+      subtotal: subtotal.toFixed(2),
+      discount_amount: Number(draftSale?.discount_amount || 0).toFixed(2),
+      tax_amount: Number(draftSale?.tax_amount || 0).toFixed(2),
+      total_amount: total.toFixed(2),
+      status: "COMPLETED",
+      sync_status: "PENDING",
+      offline_authorization_id: offlineAuthorization.id,
+      created_at: now,
+      completed_at: now,
+      client_completed_at: now,
+      items,
+      payments: [
+        {
+          id: "offline-cash-payment",
+          payment_method: "CASH",
+          amount: total.toFixed(2),
+          transaction_reference: paymentReference,
+        },
+      ],
+    };
+
+    await savePendingSale(pendingSale);
+    buildReceipt(pendingSale);
   };
 
   const pollMpesaTransaction = async (transactionId, fallbackSaleId = "") => {
@@ -514,6 +729,11 @@ export default function POS() {
       return;
     }
 
+    if (total <= 0) {
+      setError("Sale total must be greater than zero.");
+      return;
+    }
+
     if (paymentMethod === "MPESA" && !customerPhone.trim()) {
       setError("Enter the customer's M-Pesa phone number.");
       return;
@@ -530,12 +750,21 @@ export default function POS() {
     setReceiptSale(null);
     setMpesaStatus("");
 
+    const receiptReference =
+      draftSale?.reference || createReceiptReference();
+    let saleId = draftSale?.id;
+
     try {
       let sale = draftSale;
-      let saleId = draftSale?.id;
+
+      if (!navigator.onLine) {
+        await storeOfflineSale(receiptReference, saleId);
+        return;
+      }
 
       if (!draftSale) {
         const saleResponse = await api.post("/sales/sales/", {
+          reference: receiptReference,
           location: Number(location),
           customer_name: customerName,
           customer_phone: customerPhone
@@ -589,6 +818,18 @@ export default function POS() {
         await pollMpesaTransaction(transactionId, saleId);
       } else {
         // Cash, card, bank and other supported non-M-Pesa methods use normal checkout.
+        const clientCompletedAt =
+          sale.client_completed_at || new Date().toISOString();
+        await api.patch(`/sales/sales/${saleId}/`, {
+          client_completed_at: clientCompletedAt,
+        });
+        sale.client_completed_at = clientCompletedAt;
+        setDraftSale((current) =>
+          current?.id === saleId
+            ? { ...current, client_completed_at: clientCompletedAt }
+            : current
+        );
+
         await api.post(`/sales/sales/${saleId}/checkout/`, {
           payments: [
             {
@@ -605,13 +846,27 @@ export default function POS() {
         buildReceipt(receiptResponse.data?.sale || receiptResponse.data);
       }
     } catch (err) {
-      setError(
-        err.response?.data?.detail ||
-        err.response?.data?.error ||
-        err.response?.data?.message ||
-        err.message ||
-        "Checkout failed. Please check the sale and try again."
-      );
+      if (
+        !err.response &&
+        (err.code === "ERR_NETWORK" || !navigator.onLine) &&
+        paymentMethod === "CASH"
+      ) {
+        try {
+          await storeOfflineSale(receiptReference, saleId);
+        } catch (storageError) {
+          setError(
+            `Offline checkout could not be saved safely: ${storageError.message}`
+          );
+        }
+      } else {
+        setError(
+          err.response?.data?.detail ||
+          err.response?.data?.error ||
+          err.response?.data?.message ||
+          err.message ||
+          "Checkout failed. Please check the sale and try again."
+        );
+      }
     } finally {
       setLoading(false);
     }

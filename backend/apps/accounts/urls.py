@@ -2,10 +2,15 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from rest_framework_simplejwt.views import TokenRefreshView
-
 from .views import (
     CustomTokenObtainPairView,
+    DeviceViewSet,
+    DeviceTokenRefreshView,
+    EmailVerificationView,
+    EmailVerificationRequestView,
+    OfflineAuthorizationViewSet,
+    PasswordResetConfirmView,
+    PasswordResetRequestView,
     UserManagementViewSet,
 )
 
@@ -17,12 +22,42 @@ router.register(
     UserManagementViewSet,
     basename='users'
 )
+router.register(
+    'devices',
+    DeviceViewSet,
+    basename='devices'
+)
+router.register(
+    'offline-authorizations',
+    OfflineAuthorizationViewSet,
+    basename='offline-authorizations'
+)
 
 
 urlpatterns = [
     path('login/', CustomTokenObtainPairView.as_view(), name='login'),
 
-    path('refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('refresh/', DeviceTokenRefreshView.as_view(), name='token_refresh'),
+    path(
+        'email-verification/',
+        EmailVerificationView.as_view(),
+        name='email-verification',
+    ),
+    path(
+        'email-verification/request/',
+        EmailVerificationRequestView.as_view(),
+        name='email-verification-request',
+    ),
+    path(
+        'password-reset/',
+        PasswordResetRequestView.as_view(),
+        name='password-reset',
+    ),
+    path(
+        'password-reset/confirm/',
+        PasswordResetConfirmView.as_view(),
+        name='password-reset-confirm',
+    ),
 
     path('', include(router.urls)),
 ]

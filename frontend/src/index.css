@@ -10,6 +10,14 @@ body {
   background: #f8fafc;
 }
 
+@media (max-height: 640px) {
+  .login-page {
+    align-items: flex-start;
+    padding-bottom: 1.5rem;
+    padding-top: 1.5rem;
+  }
+}
+
 .responsive-table-wrap {
   overflow-x: auto;
 }

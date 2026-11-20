@@ -1,13 +1,19 @@
 from decimal import Decimal
+from datetime import timedelta
+import uuid
 from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APITestCase
+from rest_framework_simplejwt.tokens import AccessToken
 
+from apps.accounts.models import Device, OfflineAuthorization
 from apps.inventory.models import StockLocation
-from .models import Sale, SaleReturn
+from apps.products.models import Category, Product, Unit
+from .models import Sale, SaleItem, SaleReturn
 from .mpesa import MpesaRequestError, initiate_stk_push
 
 
@@ -170,6 +176,269 @@ class SaleHistoryAccessTests(APITestCase):
         self.assertCountEqual(
             [sale["id"] for sale in response.data],
             [self.cashier_sale.id, self.other_sale.id],
+        )
+
+
+class OfflineReceiptReferenceTests(APITestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.cashier = user_model.objects.create_user(
+            username="offline-cashier",
+            email="offline-cashier@example.com",
+            password="test-password",
+            role="CASHIER",
+        )
+        self.other_cashier = user_model.objects.create_user(
+            username="other-offline-cashier",
+            email="other-offline-cashier@example.com",
+            password="test-password",
+            role="CASHIER",
+        )
+        self.location = StockLocation.objects.create(
+            name="Offline test store",
+            code="OFFLINE-TEST",
+        )
+        self.reference = "SALE-0123456789ABCDEF0123456789ABCDEF"
+
+    def test_client_reference_is_idempotent_for_its_cashier(self):
+        self.client.force_authenticate(user=self.cashier)
+        payload = {
+            "reference": self.reference,
+            "location": self.location.id,
+        }
+
+        first_response = self.client.post(
+            reverse("sales-list"),
+            payload,
+            format="json",
+        )
+        second_response = self.client.post(
+            reverse("sales-list"),
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(first_response.status_code, 201)
+        self.assertEqual(second_response.status_code, 201)
+        self.assertEqual(first_response.data["id"], second_response.data["id"])
+        self.assertEqual(
+            Sale.objects.filter(reference=self.reference).count(),
+            1,
+        )
+
+    def test_receipt_serialization_marks_server_sale_synchronized(self):
+        self.client.force_authenticate(user=self.cashier)
+        sale = Sale.objects.create(
+            cashier=self.cashier,
+            location=self.location,
+        )
+
+        response = self.client.get(reverse("sales-detail", args=[sale.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["sync_status"], "SYNCED")
+
+    def test_client_completion_time_can_only_be_set_on_a_draft(self):
+        self.client.force_authenticate(user=self.cashier)
+        sale = Sale.objects.create(
+            cashier=self.cashier,
+            location=self.location,
+        )
+        completion_time = timezone.now()
+        sale_url = reverse("sales-detail", args=[sale.id])
+
+        response = self.client.patch(
+            sale_url,
+            {"client_completed_at": completion_time.isoformat()},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        sale.refresh_from_db()
+        self.assertEqual(sale.client_completed_at, completion_time)
+
+        sale.status = Sale.Status.COMPLETED
+        sale.save(update_fields=["status"])
+        response = self.client.patch(
+            sale_url,
+            {"client_completed_at": timezone.now().isoformat()},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_receipt_reference_cannot_be_claimed_by_another_cashier(self):
+        Sale.objects.create(
+            cashier=self.cashier,
+            location=self.location,
+            reference=self.reference,
+        )
+        self.client.force_authenticate(user=self.other_cashier)
+
+        response = self.client.post(
+            reverse("sales-list"),
+            {
+                "reference": self.reference,
+                "location": self.location.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            Sale.objects.filter(reference=self.reference).count(),
+            1,
+        )
+
+
+class OfflineSaleAuthorizationTests(APITestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.cashier = user_model.objects.create_user(
+            username="authorized-cashier",
+            email="authorized-cashier@example.com",
+            password="test-password",
+            role="CASHIER",
+        )
+        self.device = Device.objects.create(
+            name="Authorized sales device",
+            platform=Device.Platform.DESKTOP,
+            registered_by=self.cashier,
+        )
+        self.location = StockLocation.objects.create(
+            name="Authorized sale store",
+            code="AUTHORIZED-SALE",
+        )
+        now = timezone.now()
+        self.grant = OfflineAuthorization.objects.create(
+            user=self.cashier,
+            device=self.device,
+            operation=OfflineAuthorization.Operation.CASH_SALE,
+            authorized_by=self.cashier,
+            granted_at=now - timedelta(minutes=5),
+            expires_at=now + timedelta(hours=12),
+        )
+        self.authenticate_device(self.device.sync_id)
+
+    def authenticate_device(self, sync_id):
+        token = AccessToken.for_user(self.cashier)
+        token["device_sync_id"] = str(sync_id)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+
+    def sync_sale(self, *, grant=None, occurred_at=None):
+        return self.client.post(
+            reverse("sales-list"),
+            {
+                "reference": f"SALE-{uuid.uuid4().hex.upper()}",
+                "location": self.location.id,
+                "client_completed_at": (
+                    occurred_at or timezone.now()
+                ).isoformat(),
+                "offline_authorization": grant or self.grant.id,
+            },
+            format="json",
+        )
+
+    def test_accepts_sale_from_the_authorized_user_and_device(self):
+        response = self.sync_sale()
+
+        self.assertEqual(response.status_code, 201)
+        sale = Sale.objects.get(pk=response.data["id"])
+        self.assertEqual(sale.offline_authorization, self.grant)
+        self.assertEqual(sale.cashier, self.cashier)
+
+    def test_rejects_grant_used_from_another_device(self):
+        other_device = Device.objects.create(
+            name="Other authorized sales device",
+            platform=Device.Platform.DESKTOP,
+            registered_by=self.cashier,
+        )
+        self.authenticate_device(other_device.sync_id)
+
+        response = self.sync_sale()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("offline_authorization", response.data)
+
+    def test_rejects_sale_outside_grant_window(self):
+        response = self.sync_sale(
+            occurred_at=self.grant.expires_at
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("offline_authorization", response.data)
+
+    def test_rejects_grant_used_by_another_user(self):
+        other_cashier = get_user_model().objects.create_user(
+            username="other-authorized-cashier",
+            email="other-authorized-cashier@example.com",
+            password="test-password",
+            role="CASHIER",
+        )
+        token = AccessToken.for_user(other_cashier)
+        token["device_sync_id"] = str(self.device.sync_id)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+
+        response = self.sync_sale()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("offline_authorization", response.data)
+
+    def test_rejects_sale_after_grant_revocation(self):
+        self.grant.revoked_at = timezone.now() - timedelta(minutes=1)
+        self.grant.save(update_fields=["revoked_at"])
+
+        response = self.sync_sale()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("offline_authorization", response.data)
+
+    def test_offline_authorized_sale_rejects_non_cash_checkout(self):
+        category = Category.objects.create(name="Offline sale products")
+        unit = Unit.objects.create(
+            name="Piece",
+            abbreviation="pc",
+        )
+        product = Product.objects.create(
+            name="Offline sale item",
+            sku="OFFLINE-SALE-ITEM",
+            category=category,
+            unit=unit,
+            cost_price=Decimal("5.00"),
+            selling_price=Decimal("10.00"),
+            created_by=self.cashier,
+        )
+        sale = Sale.objects.create(
+            cashier=self.cashier,
+            location=self.location,
+            offline_authorization=self.grant,
+        )
+        SaleItem.objects.create(
+            sale=sale,
+            product=product,
+            quantity=Decimal("1"),
+            unit_price=Decimal("10.00"),
+            cost_price=Decimal("5.00"),
+        )
+        sale.recalculate_totals()
+
+        response = self.client.post(
+            reverse("sales-checkout", args=[sale.id]),
+            {
+                "payments": [
+                    {
+                        "payment_method": "CARD",
+                        "amount": "10.00",
+                    }
+                ]
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.data,
+            ["Offline-authorized sales can only be paid in cash."],
         )
 
 
