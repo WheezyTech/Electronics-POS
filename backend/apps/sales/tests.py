@@ -11,9 +11,9 @@ from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import AccessToken
 
 from apps.accounts.models import Device, OfflineAuthorization
-from apps.inventory.models import StockLocation
+from apps.inventory.models import StockBalance, StockLocation
 from apps.products.models import Category, Product, Unit
-from .models import Sale, SaleItem, SaleReturn
+from .models import Sale, SaleItem, SalePayment, SaleReturn
 from .mpesa import MpesaRequestError, initiate_stk_push
 
 
@@ -177,6 +177,125 @@ class SaleHistoryAccessTests(APITestCase):
             [sale["id"] for sale in response.data],
             [self.cashier_sale.id, self.other_sale.id],
         )
+
+
+class SplitPaymentCheckoutTests(APITestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.cashier = user_model.objects.create_user(
+            username="split-cashier",
+            email="split-cashier@example.com",
+            password="test-password",
+            role="CASHIER",
+        )
+        self.client.force_authenticate(user=self.cashier)
+        self.location = StockLocation.objects.create(
+            name="Split payment store",
+            code="SPLIT-PAY",
+        )
+        category = Category.objects.create(name="Split payment products")
+        unit = Unit.objects.create(name="Piece", abbreviation="pc")
+        self.product = Product.objects.create(
+            name="Split payment item",
+            sku="SPLIT-PAY-ITEM",
+            category=category,
+            unit=unit,
+            cost_price=Decimal("5.00"),
+            selling_price=Decimal("10.00"),
+            created_by=self.cashier,
+        )
+        StockBalance.objects.create(
+            product=self.product,
+            location=self.location,
+            quantity_on_hand=Decimal("5.000"),
+        )
+        self.sale = Sale.objects.create(
+            cashier=self.cashier,
+            location=self.location,
+        )
+        SaleItem.objects.create(
+            sale=self.sale,
+            product=self.product,
+            quantity=Decimal("2"),
+            unit_price=Decimal("10.00"),
+            cost_price=Decimal("5.00"),
+        )
+
+    def test_completes_sale_paid_by_cash_manual_mpesa_and_card(self):
+        response = self.client.post(
+            reverse("sales-checkout", args=[self.sale.id]),
+            {
+                "payments": [
+                    {"payment_method": "CASH", "amount": "5.00"},
+                    {
+                        "payment_method": "MPESA",
+                        "amount": "10.00",
+                        "transaction_reference": "QWE123456",
+                    },
+                    {"payment_method": "CARD", "amount": "5.00"},
+                ]
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.sale.refresh_from_db()
+        self.assertEqual(self.sale.status, Sale.Status.COMPLETED)
+        self.assertEqual(
+            list(
+                self.sale.payments.order_by("payment_method")
+                .values_list("payment_method", "amount")
+            ),
+            [
+                (SalePayment.PaymentMethod.CARD, Decimal("5.00")),
+                (SalePayment.PaymentMethod.CASH, Decimal("5.00")),
+                (SalePayment.PaymentMethod.MPESA, Decimal("10.00")),
+            ],
+        )
+        self.assertEqual(
+            self.sale.payments.get(
+                payment_method=SalePayment.PaymentMethod.MPESA
+            ).transaction_reference,
+            "QWE123456",
+        )
+
+    def test_split_payment_amounts_must_equal_sale_total(self):
+        response = self.client.post(
+            reverse("sales-checkout", args=[self.sale.id]),
+            {
+                "payments": [
+                    {"payment_method": "CASH", "amount": "5.00"},
+                    {
+                        "payment_method": "MPESA",
+                        "amount": "10.00",
+                        "transaction_reference": "QWE123456",
+                    },
+                ]
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.sale.refresh_from_db()
+        self.assertEqual(self.sale.status, Sale.Status.DRAFT)
+        self.assertFalse(self.sale.payments.exists())
+
+    def test_manual_mpesa_split_requires_transaction_reference(self):
+        response = self.client.post(
+            reverse("sales-checkout", args=[self.sale.id]),
+            {
+                "payments": [
+                    {
+                        "payment_method": "MPESA",
+                        "amount": "20.00",
+                    }
+                ]
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(self.sale.payments.exists())
 
 
 class OfflineReceiptReferenceTests(APITestCase):

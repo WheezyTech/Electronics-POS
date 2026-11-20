@@ -1,13 +1,16 @@
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Search, RefreshCw, Package, AlertTriangle,
   ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight,
-  History, X
+  History, X, Plus, Minus
 } from "lucide-react";
 import api from "../../api/axios";
+import { useAuth } from "../../context/AuthContext";
 
 export default function Inventory() {
+  const { user } = useAuth();
+  const canAdjustStock = ["ADMINISTRATOR", "STORE_MANAGER"].includes(user?.role);
   const [balances, setBalances] = useState([]);
   const [locations, setLocations] = useState([]);
   const [products, setProducts] = useState([]);
@@ -32,7 +35,7 @@ export default function Inventory() {
   const getList = (data) =>
     Array.isArray(data) ? data : data?.results || [];
 
-  const loadInventory = async () => {
+  const loadInventory = useCallback(async () => {
     try {
       setLoading(true);
       setError("");
@@ -66,18 +69,11 @@ export default function Inventory() {
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    loadInventory();
   }, []);
 
-  const formatMoney = (value) =>
-    new Intl.NumberFormat("en-KE", {
-      style: "currency",
-      currency: "KES",
-      maximumFractionDigits: 2,
-    }).format(Number(value || 0));
+  useEffect(() => {
+    Promise.resolve().then(loadInventory);
+  }, [loadInventory]);
 
   const getProductName = (product) => {
     if (typeof product === "object" && product !== null) {
@@ -129,6 +125,19 @@ export default function Inventory() {
     setShowForm(true);
   };
 
+  const openAdjustment = (balance, direction) => {
+    setAction(direction > 0 ? "adjust-increase" : "adjust-decrease");
+    setForm({
+      product: String(balance.product?.id ?? balance.product),
+      location: String(balance.location?.id ?? balance.location),
+      destination_location: "",
+      quantity: "",
+      notes: "",
+    });
+    setError("");
+    setShowForm(true);
+  };
+
   const submitAction = async (e) => {
     e.preventDefault();
 
@@ -163,6 +172,12 @@ export default function Inventory() {
         await api.post("/inventory/receive/", payload);
       } else if (action === "issue") {
         await api.post("/inventory/issue/", payload);
+      } else if (action === "adjust-increase" || action === "adjust-decrease") {
+        await api.post("/inventory/adjustments/", {
+          ...payload,
+          quantity: action === "adjust-increase" ? quantity : -quantity,
+          reference: "MANUAL-ADJUSTMENT",
+        });
       } else {
         await api.post("/inventory/transfers/", {
           product: Number(form.product),
@@ -311,6 +326,7 @@ export default function Inventory() {
                   <th className="px-5 py-3">Quantity</th>
                   <th className="px-5 py-3">Reserved</th>
                   <th className="px-5 py-3">Available</th>
+                  {canAdjustStock && <th className="px-5 py-3">Adjust</th>}
                 </tr>
               </thead>
 
@@ -347,6 +363,28 @@ export default function Inventory() {
                           {available}
                         </span>
                       </td>
+                      {canAdjustStock && (
+                        <td data-label="Adjust" className="px-5 py-4">
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              aria-label={`Add stock for ${getProductName(item.product)}`}
+                              onClick={() => openAdjustment(item, 1)}
+                              className="rounded-lg border border-green-200 p-2 text-green-700 hover:bg-green-50"
+                            >
+                              <Plus size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`Remove stock for ${getProductName(item.product)}`}
+                              onClick={() => openAdjustment(item, -1)}
+                              className="rounded-lg border border-orange-200 p-2 text-orange-700 hover:bg-orange-50"
+                            >
+                              <Minus size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -466,7 +504,9 @@ export default function Inventory() {
               <h2 className="text-lg font-bold capitalize">
                 {action === "opening"
                   ? "Enter Opening Stock"
-                  : `${action} Stock`}
+                  : action.startsWith("adjust-")
+                    ? `${action === "adjust-increase" ? "Add to" : "Remove from"} Stock`
+                    : `${action} Stock`}
               </h2>
               <button
                 onClick={() => setShowForm(false)}
@@ -483,6 +523,13 @@ export default function Inventory() {
                   This creates a stock adjustment, not a purchase receipt or
                   transfer. Enter only the amount not already recorded.
                 </p>
+              )}
+              {action.startsWith("adjust-") && (
+              <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+                {action === "adjust-increase"
+                  ? "Add the received quantity to this stock balance."
+                  : "Remove the quantity from this stock balance. Stock cannot fall below reserved quantities."}
+              </p>
               )}
 
               {error && (
@@ -564,7 +611,9 @@ export default function Inventory() {
 
               <label className="block">
                 <span className="mb-1 block text-sm font-medium">
-                  {action === "opening" ? "Quantity to add" : "Quantity"}
+                  {action === "opening" || action === "adjust-increase"
+                    ? "Quantity to add"
+                    : "Quantity"}
                 </span>
                 <input
                   required
@@ -577,7 +626,7 @@ export default function Inventory() {
                   }
                   className="w-full rounded-lg border p-2.5 text-sm"
                   placeholder={
-                    action === "opening"
+                    action === "opening" || action === "adjust-increase"
                       ? "Enter existing stock quantity"
                       : "Enter quantity"
                   }
@@ -614,6 +663,8 @@ export default function Inventory() {
                     ? "Processing..."
                     : action === "opening"
                       ? "Add Opening Stock"
+                      : action.startsWith("adjust-")
+                        ? "Save Adjustment"
                       : "Confirm"}
                 </button>
               </div>

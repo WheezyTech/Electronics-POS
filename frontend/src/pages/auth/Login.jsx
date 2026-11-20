@@ -1,7 +1,7 @@
 
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Lock, UserRound } from "lucide-react";
+import { Download, Lock, MonitorDown, Smartphone, UserRound } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import webLogo from "../../../assets/branding/Electronics POS Web logo.png";
 
@@ -115,6 +115,37 @@ export default function Login() {
           >
             Forgot password?
           </Link>
+        </div>
+
+        <div className="mt-6 border-t border-slate-200 pt-5">
+          <p className="mb-3 text-center text-sm font-medium text-slate-700">
+            Get the Electronics POS app
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <a
+              href="https://github.com/WheezyTech/Electronics-POS/releases/latest/download/Electronics%20POS%20Setup-1.0.0.exe"
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center justify-center gap-2 rounded-lg border border-blue-200 px-3 py-2.5 text-sm font-medium text-blue-700 hover:bg-blue-50"
+            >
+              <MonitorDown size={17} />
+              Windows
+              <Download size={15} />
+            </a>
+            <a
+              href="https://github.com/WheezyTech/Electronics-POS/releases/latest/download/Electronics%20POS%20Android-1.0.0.apk"
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center justify-center gap-2 rounded-lg border border-green-200 px-3 py-2.5 text-sm font-medium text-green-700 hover:bg-green-50"
+            >
+              <Smartphone size={17} />
+              Android
+              <Download size={15} />
+            </a>
+          </div>
+          <p className="mt-2 text-center text-xs text-slate-400">
+            Install the Windows setup file or download the APK on Android.
+          </p>
         </div>
 
         <p className="mt-8 text-center text-xs text-slate-400">

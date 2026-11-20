@@ -297,14 +297,6 @@ class SaleViewSet(viewsets.ModelViewSet):
                 "Offline-authorized sales can only be paid in cash."
             )
 
-        if any(
-            payment["payment_method"] == SalePayment.PaymentMethod.MPESA
-            for payment in payments
-        ):
-            raise ValidationError(
-                "M-Pesa payments must be completed through the STK Push workflow."
-            )
-
         if sale.mpesa_transactions.filter(
             status__in=[
                 MpesaTransaction.Status.PENDING,

@@ -374,6 +374,18 @@ class CheckoutPaymentSerializer(serializers.Serializer):
         allow_blank=True
     )
 
+    def validate(self, attrs):
+        if (
+            attrs["payment_method"] == SalePayment.PaymentMethod.MPESA
+            and not attrs.get("transaction_reference", "").strip()
+        ):
+            raise serializers.ValidationError({
+                "transaction_reference": (
+                    "Enter the M-Pesa reference for a manually received payment."
+                )
+            })
+        return attrs
+
 
 class CheckoutSerializer(serializers.Serializer):
     payments = CheckoutPaymentSerializer(many=True)

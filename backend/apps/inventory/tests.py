@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
@@ -54,4 +56,85 @@ class OpeningStockTests(TestCase):
         self.assertEqual(
             StockMovement.objects.get(balance=balance).movement_type,
             StockMovement.MovementType.ADJUSTMENT,
+        )
+
+    def test_manager_can_add_and_remove_stock_with_audited_adjustments(self):
+        for quantity in ("5", "-2"):
+            response = self.client.post(
+                reverse("stock-adjustment"),
+                {
+                    "product": self.product.id,
+                    "location": self.location.id,
+                    "quantity": quantity,
+                    "notes": "Manual inventory correction.",
+                },
+            )
+            self.assertEqual(response.status_code, 201)
+
+        balance = StockBalance.objects.get(
+            product=self.product,
+            location=self.location,
+        )
+        self.assertEqual(balance.quantity_on_hand, 3)
+        self.assertCountEqual(
+            list(
+                StockMovement.objects.filter(balance=balance)
+                .values_list("quantity_delta", flat=True)
+            ),
+            [Decimal("5.000"), Decimal("-2.000")],
+        )
+
+    def test_stock_cannot_be_adjusted_below_reserved_quantity(self):
+        self.client.post(
+            reverse("stock-adjustment"),
+            {
+                "product": self.product.id,
+                "location": self.location.id,
+                "quantity": "5",
+            },
+        )
+        balance = StockBalance.objects.get(
+            product=self.product,
+            location=self.location,
+        )
+        balance.quantity_reserved = 3
+        balance.save(update_fields=["quantity_reserved"])
+
+        response = self.client.post(
+            reverse("stock-adjustment"),
+            {
+                "product": self.product.id,
+                "location": self.location.id,
+                "quantity": "-3",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        balance.refresh_from_db()
+        self.assertEqual(balance.quantity_on_hand, 5)
+
+    def test_cashier_cannot_manually_adjust_stock(self):
+        cashier = get_user_model().objects.create_user(
+            username="inventory-cashier",
+            email="inventory-cashier@example.com",
+            password="Secure-cashier-password-928!",
+            role="CASHIER",
+        )
+        self.client.force_authenticate(user=cashier)
+
+        response = self.client.post(
+            reverse("stock-adjustment"),
+            {
+                "product": self.product.id,
+                "location": self.location.id,
+                "quantity": "1",
+            },
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(
+            StockBalance.objects.filter(
+                product=self.product,
+                location=self.location,
+            ).exists()
         )

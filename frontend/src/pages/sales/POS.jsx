@@ -91,6 +91,15 @@ export default function POS() {
   const [customerPhone, setCustomerPhone] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("CASH");
   const [paymentReference, setPaymentReference] = useState("");
+  const [splitMode, setSplitMode] = useState(false);
+  const [splitPayments, setSplitPayments] = useState([
+    {
+      id: 1,
+      payment_method: "CASH",
+      amount: "",
+      transaction_reference: "",
+    },
+  ]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(
     initialCart?.length
@@ -496,6 +505,14 @@ export default function POS() {
     setCustomerName("");
     setCustomerPhone("");
     setPaymentReference("");
+    setPaymentMethod("CASH");
+    setSplitMode(false);
+    setSplitPayments([{
+      id: Date.now(),
+      payment_method: "CASH",
+      amount: "",
+      transaction_reference: "",
+    }]);
     setSearch("");
     setSkuFilter("");
     setModelFilter("");
@@ -514,8 +531,8 @@ export default function POS() {
     }
   };
 
-  const storeOfflineSale = async (reference, remoteSaleId) => {
-    if (paymentMethod !== "CASH") {
+  const storeOfflineSale = async (reference, remoteSaleId, payments) => {
+    if (payments.some((payment) => payment.payment_method !== "CASH")) {
       throw new Error(
         "Only cash sales can be completed offline. Other payment methods require a connection."
       );
@@ -572,14 +589,11 @@ export default function POS() {
       completed_at: now,
       client_completed_at: now,
       items,
-      payments: [
-        {
-          id: "offline-cash-payment",
-          payment_method: "CASH",
-          amount: total.toFixed(2),
-          transaction_reference: paymentReference,
-        },
-      ],
+      payments: payments.map((payment, index) => ({
+        id: `offline-cash-payment-${index + 1}`,
+        ...payment,
+        amount: payment.amount.toFixed(2),
+      })),
     };
 
     await savePendingSale(pendingSale);
@@ -734,13 +748,52 @@ export default function POS() {
       return;
     }
 
-    if (paymentMethod === "MPESA" && !customerPhone.trim()) {
+    if (paymentMethod === "MPESA" && !splitMode && !customerPhone.trim()) {
       setError("Enter the customer's M-Pesa phone number.");
       return;
     }
 
-    if (paymentMethod === "MPESA" && !Number.isInteger(total)) {
+    if (paymentMethod === "MPESA" && !splitMode && !Number.isInteger(total)) {
       setError("M-Pesa STK Push requires a whole-number amount in KSh. Adjust the sale total first.");
+      return;
+    }
+
+    const checkoutPayments = splitMode
+      ? splitPayments.map(({ payment_method, amount, transaction_reference }) => ({
+          payment_method,
+          amount: Number(amount || 0),
+          transaction_reference: transaction_reference.trim(),
+        }))
+      : [{
+          payment_method: paymentMethod,
+          amount: total,
+          transaction_reference: paymentReference.trim(),
+        }];
+    if (
+      checkoutPayments.some(
+        (payment) => !Number.isFinite(payment.amount) || payment.amount <= 0
+      )
+    ) {
+      setError("Enter an amount greater than zero for every payment method.");
+      return;
+    }
+    const paymentTotalCents = checkoutPayments.reduce(
+      (sum, payment) => sum + Math.round(payment.amount * 100),
+      0
+    );
+    if (paymentTotalCents !== Math.round(total * 100)) {
+      setError("Payment amounts must add up exactly to the sale total.");
+      return;
+    }
+    if (
+      splitMode &&
+      checkoutPayments.some(
+        (payment) =>
+          payment.payment_method === "MPESA" &&
+          !payment.transaction_reference
+      )
+    ) {
+      setError("Enter the M-Pesa transaction reference for manual split payments.");
       return;
     }
 
@@ -758,7 +811,7 @@ export default function POS() {
       let sale = draftSale;
 
       if (!navigator.onLine) {
-        await storeOfflineSale(receiptReference, saleId);
+        await storeOfflineSale(receiptReference, saleId, checkoutPayments);
         return;
       }
 
@@ -789,7 +842,7 @@ export default function POS() {
 
       await syncDraftItems(sale, cart);
 
-      if (paymentMethod === "MPESA") {
+      if (paymentMethod === "MPESA" && !splitMode) {
         // Initiate STK Push. Never send M-Pesa through the normal checkout endpoint.
         const stkResponse = await api.post("/sales/mpesa/initiate/", {
           sale_id: saleId,
@@ -831,13 +884,10 @@ export default function POS() {
         );
 
         await api.post(`/sales/sales/${saleId}/checkout/`, {
-          payments: [
-            {
-              amount: total.toFixed(2),
-              payment_method: paymentMethod,
-              transaction_reference: paymentReference
-            }
-          ]
+          payments: checkoutPayments.map((payment) => ({
+            ...payment,
+            amount: payment.amount.toFixed(2),
+          })),
         });
 
         const receiptResponse = await api.get(
@@ -849,10 +899,12 @@ export default function POS() {
       if (
         !err.response &&
         (err.code === "ERR_NETWORK" || !navigator.onLine) &&
-        paymentMethod === "CASH"
+        checkoutPayments.every(
+          (payment) => payment.payment_method === "CASH"
+        )
       ) {
         try {
-          await storeOfflineSale(receiptReference, saleId);
+          await storeOfflineSale(receiptReference, saleId, checkoutPayments);
         } catch (storageError) {
           setError(
             `Offline checkout could not be saved safely: ${storageError.message}`
@@ -1169,7 +1221,9 @@ export default function POS() {
             />
 
             <label className="block text-sm font-medium">
-              {paymentMethod === "MPESA" ? "M-Pesa phone number (required)" : "Customer phone (optional)"}
+              {paymentMethod === "MPESA" && !splitMode
+                ? "M-Pesa phone number (required)"
+                : "Customer phone (optional)"}
             </label>
             <input
               value={customerPhone}
@@ -1178,30 +1232,182 @@ export default function POS() {
               placeholder="07XXXXXXXX or 2547XXXXXXXX"
             />
 
-            <label className="block text-sm font-medium">Payment method</label>
-            <select
-              value={paymentMethod}
-              onChange={(event) => setPaymentMethod(event.target.value)}
-              className="w-full rounded-lg border p-2.5"
-            >
-              <option value="CASH">Cash</option>
-              <option value="MPESA">M-Pesa</option>
-              <option value="CARD">Card</option>
-              <option value="BANK">Bank</option>
-              <option value="OTHER">Other</option>
-            </select>
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <input
+                type="checkbox"
+                checked={splitMode}
+                onChange={(event) => {
+                  const enabled = event.target.checked;
+                  setSplitMode(enabled);
+                  if (enabled) {
+                    setSplitPayments([{
+                      id: Date.now(),
+                      payment_method: paymentMethod,
+                      amount: total.toFixed(2),
+                      transaction_reference: paymentReference,
+                    }]);
+                  }
+                }}
+              />
+              Split payment across multiple methods
+            </label>
 
-            {paymentMethod !== "CASH" && paymentMethod !== "MPESA" && (
+            {splitMode ? (
+              <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+                <p className="text-xs text-slate-600">
+                  Enter the amount received through each method. Total must
+                  match the sale. For M-Pesa, confirm the payment and enter its
+                  transaction reference; split payments do not send an STK prompt.
+                </p>
+                {splitPayments.map((payment) => (
+                  <div
+                    key={payment.id}
+                    className="space-y-2 rounded-lg bg-slate-50 p-3"
+                  >
+                    <label className="block text-sm font-medium">
+                      Payment method
+                      <select
+                        value={payment.payment_method}
+                        onChange={(event) =>
+                          setSplitPayments((current) =>
+                            current.map((item) =>
+                              item.id === payment.id
+                                ? { ...item, payment_method: event.target.value }
+                                : item
+                            )
+                          )
+                        }
+                        className="mt-1 w-full rounded-lg border p-2.5"
+                      >
+                        <option value="CASH">Cash</option>
+                        <option value="MPESA">M-Pesa (manual)</option>
+                        <option value="CARD">Card</option>
+                        <option value="BANK">Bank</option>
+                        <option value="OTHER">Other</option>
+                      </select>
+                    </label>
+                    <label className="block text-sm font-medium">
+                      Amount (KSh)
+                      <input
+                        required
+                        type="number"
+                        inputMode="decimal"
+                        min="0.01"
+                        step="0.01"
+                        value={payment.amount}
+                        onChange={(event) =>
+                          setSplitPayments((current) =>
+                            current.map((item) =>
+                              item.id === payment.id
+                                ? { ...item, amount: event.target.value }
+                                : item
+                            )
+                          )
+                        }
+                        className="mt-1 w-full rounded-lg border p-2.5"
+                        placeholder="0.00"
+                      />
+                    </label>
+                    {payment.payment_method !== "CASH" && (
+                      <label className="block text-sm font-medium">
+                        Transaction reference
+                        {payment.payment_method === "MPESA" && " (required)"}
+                        <input
+                          required={payment.payment_method === "MPESA"}
+                          value={payment.transaction_reference}
+                          onChange={(event) =>
+                            setSplitPayments((current) =>
+                              current.map((item) =>
+                                item.id === payment.id
+                                  ? {
+                                      ...item,
+                                      transaction_reference: event.target.value,
+                                    }
+                                  : item
+                              )
+                            )
+                          }
+                          className="mt-1 w-full rounded-lg border p-2.5"
+                          placeholder="Transaction reference"
+                        />
+                      </label>
+                    )}
+                    {splitPayments.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSplitPayments((current) =>
+                            current.filter((item) => item.id !== payment.id)
+                          )
+                        }
+                        className="text-sm font-medium text-red-700 hover:text-red-800"
+                      >
+                        Remove payment
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const allocated = splitPayments.reduce(
+                      (sum, payment) => sum + Number(payment.amount || 0),
+                      0
+                    );
+                    const remaining = Math.max(
+                      0,
+                      Number((total - allocated).toFixed(2))
+                    );
+                    setSplitPayments((current) => [
+                      ...current,
+                      {
+                        id: Date.now() + current.length,
+                        payment_method: "MPESA",
+                        amount: remaining.toFixed(2),
+                        transaction_reference: "",
+                      },
+                    ]);
+                  }}
+                  className="w-full rounded-lg border border-blue-200 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
+                >
+                  Add payment method
+                </button>
+                <p className="text-right text-sm font-semibold text-slate-700">
+                  Allocated: KSh{" "}
+                  {splitPayments.reduce(
+                    (sum, payment) => sum + Number(payment.amount || 0),
+                    0
+                  ).toLocaleString()}
+                </p>
+              </div>
+            ) : (
               <>
-                <label className="block text-sm font-medium">
-                  Transaction reference (optional)
-                </label>
+                <label className="block text-sm font-medium">Payment method</label>
+                <select
+                  value={paymentMethod}
+                  onChange={(event) => setPaymentMethod(event.target.value)}
+                  className="w-full rounded-lg border p-2.5"
+                >
+                  <option value="CASH">Cash</option>
+                  <option value="MPESA">M-Pesa</option>
+                  <option value="CARD">Card</option>
+                  <option value="BANK">Bank</option>
+                  <option value="OTHER">Other</option>
+                </select>
+
+                {paymentMethod !== "CASH" && paymentMethod !== "MPESA" && (
+                  <>
+                    <label className="block text-sm font-medium">
+                      Transaction reference (optional)
+                    </label>
                 <input
                   value={paymentReference}
                   onChange={(event) => setPaymentReference(event.target.value)}
                   className="w-full rounded-lg border p-2.5"
                   placeholder="Transaction reference"
                 />
+                  </>
+                )}
               </>
             )}
 
