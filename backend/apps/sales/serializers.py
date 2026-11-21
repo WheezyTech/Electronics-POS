@@ -2,6 +2,7 @@
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.db.models import Sum
 from rest_framework import serializers
 
 from .models import Sale, SaleItem, SalePayment, SaleReturn, SaleReturnItem, SaleRefundPayment
@@ -159,6 +160,39 @@ class SaleSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
+        discount_amount = attrs.get(
+            "discount_amount",
+            self.instance.discount_amount if self.instance else Decimal("0.00"),
+        )
+        tax_amount = attrs.get(
+            "tax_amount",
+            self.instance.tax_amount if self.instance else Decimal("0.00"),
+        )
+        if discount_amount < 0 or tax_amount < 0:
+            raise serializers.ValidationError(
+                "Discount and tax amounts cannot be negative."
+            )
+
+        if self.instance:
+            updated_total = (
+                self.instance.subtotal - discount_amount + tax_amount
+            )
+            if updated_total < 0:
+                raise serializers.ValidationError(
+                    "Discount cannot exceed the sale subtotal plus tax."
+                )
+            if self.instance.status == Sale.Status.COMPLETED:
+                payments_total = self.instance.payments.aggregate(
+                    total=Sum("amount")
+                )["total"] or Decimal("0.00")
+                if payments_total != updated_total:
+                    raise serializers.ValidationError({
+                        "discount_amount": (
+                            "The updated sale total must match its recorded "
+                            "payments. Edit the payments and sale together."
+                        )
+                    })
+
         if (
             self.instance
             and "offline_authorization" in attrs
@@ -181,6 +215,15 @@ class SaleSerializer(serializers.ModelSerializer):
                 occurred_at,
             )
         return attrs
+
+    def update(self, instance, validated_data):
+        instance = super().update(instance, validated_data)
+        if any(
+            field in validated_data
+            for field in ("discount_amount", "tax_amount")
+        ):
+            instance.recalculate_totals()
+        return instance
 
 
 class SaleCreateSerializer(serializers.ModelSerializer):
@@ -396,6 +439,23 @@ class CheckoutSerializer(serializers.Serializer):
                 "At least one payment is required."
             )
         return value
+
+
+class SalePaymentEditSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    payment_method = serializers.ChoiceField(
+        choices=SalePayment.PaymentMethod.choices
+    )
+    amount = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        min_value=Decimal("0.01"),
+    )
+    transaction_reference = serializers.CharField(
+        max_length=100,
+        required=False,
+        allow_blank=True,
+    )
 
 class SaleReturnItemSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(

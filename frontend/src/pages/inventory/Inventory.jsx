@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Search, RefreshCw, Package, AlertTriangle,
   ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight,
-  History, X, Plus, Minus
+  History, X, Plus, Minus, Pencil
 } from "lucide-react";
 import api from "../../api/axios";
 import { useAuth } from "../../context/AuthContext";
@@ -11,6 +11,8 @@ import { useAuth } from "../../context/AuthContext";
 export default function Inventory() {
   const { user } = useAuth();
   const canAdjustStock = ["ADMINISTRATOR", "STORE_MANAGER"].includes(user?.role);
+  const canEditMovements =
+    user?.is_superuser || user?.role === "ADMINISTRATOR";
   const [balances, setBalances] = useState([]);
   const [locations, setLocations] = useState([]);
   const [products, setProducts] = useState([]);
@@ -23,6 +25,14 @@ export default function Inventory() {
   const [showForm, setShowForm] = useState(false);
   const [action, setAction] = useState("receive");
   const [saving, setSaving] = useState(false);
+  const [editingMovement, setEditingMovement] = useState(null);
+  const [movementForm, setMovementForm] = useState({
+    quantity_delta: "",
+    movement_type: "",
+    unit_cost: "",
+    reference: "",
+    notes: "",
+  });
 
   const [form, setForm] = useState({
     product: "",
@@ -200,6 +210,51 @@ export default function Inventory() {
               )
               .join(" | ")
           : "Inventory operation failed."
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openMovementEditor = (movement) => {
+    setEditingMovement(movement);
+    setMovementForm({
+      quantity_delta: movement.quantity_delta,
+      movement_type: movement.movement_type,
+      unit_cost: movement.unit_cost ?? "",
+      reference: movement.reference || "",
+      notes: movement.notes || "",
+    });
+    setError("");
+  };
+
+  const saveMovement = async (event) => {
+    event.preventDefault();
+    try {
+      setSaving(true);
+      setError("");
+      await api.patch(
+        `/inventory/movements/${editingMovement.id}/edit/`,
+        {
+          quantity_delta: movementForm.quantity_delta,
+          movement_type: movementForm.movement_type,
+          unit_cost: movementForm.unit_cost || null,
+          reference: movementForm.reference,
+          notes: movementForm.notes,
+        }
+      );
+      setEditingMovement(null);
+      await loadInventory();
+    } catch (err) {
+      const data = err.response?.data;
+      setError(
+        typeof data === "object"
+          ? Object.entries(data)
+              .map(([key, value]) =>
+                `${key}: ${Array.isArray(value) ? value.join(", ") : value}`
+              )
+              .join(" | ")
+          : "Unable to update this stock movement."
       );
     } finally {
       setSaving(false);
@@ -457,6 +512,7 @@ export default function Inventory() {
                 <th className="px-5 py-3">Type</th>
                 <th className="px-5 py-3">Quantity</th>
                 <th className="px-5 py-3">Location</th>
+                {canEditMovements && <th className="px-5 py-3">Action</th>}
               </tr>
             </thead>
 
@@ -482,6 +538,18 @@ export default function Inventory() {
                     {movement.location_name ||
                       getLocationName(movement.location)}
                   </td>
+                  {canEditMovements && (
+                    <td data-label="Action" className="px-5 py-4">
+                      <button
+                        type="button"
+                        onClick={() => openMovementEditor(movement)}
+                        aria-label={`Edit movement for ${movement.product_name || "product"}`}
+                        className="rounded-lg border p-2 text-slate-600 hover:bg-slate-50"
+                      >
+                        <Pencil size={16} />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
 
@@ -523,6 +591,115 @@ export default function Inventory() {
                   This creates a stock adjustment, not a purchase receipt or
                   transfer. Enter only the amount not already recorded.
                 </p>
+              )}
+
+              {editingMovement && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                  <div className="w-full max-w-lg rounded-xl bg-white shadow-xl">
+                    <div className="flex items-center justify-between border-b p-5">
+                      <h2 className="text-lg font-bold">Edit Stock Movement</h2>
+                      <button
+                        type="button"
+                        onClick={() => setEditingMovement(null)}
+                        className="rounded-lg p-2 hover:bg-gray-100"
+                        aria-label="Close movement editor"
+                      >
+                        <X size={20} />
+                      </button>
+                    </div>
+                    <form onSubmit={saveMovement} className="space-y-4 p-5">
+                      <p className="text-sm text-gray-600">
+                        {editingMovement.product_name} · {editingMovement.location_name}
+                      </p>
+                      {error && (
+                        <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
+                          {error}
+                        </div>
+                      )}
+                      <label className="block">
+                        <span className="mb-1 block text-sm font-medium">Movement type</span>
+                        <select
+                          required
+                          value={movementForm.movement_type}
+                          onChange={(event) =>
+                            setMovementForm({ ...movementForm, movement_type: event.target.value })
+                          }
+                          className="w-full rounded-lg border p-2.5 text-sm"
+                        >
+                          {[
+                            "RECEIPT", "ISSUE", "ADJUSTMENT", "TRANSFER_IN",
+                            "TRANSFER_OUT", "CUSTOMER_RETURN", "SUPPLIER_RETURN", "DAMAGE",
+                          ].map((type) => (
+                            <option key={type} value={type}>{type}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="block">
+                        <span className="mb-1 block text-sm font-medium">Quantity change (+/-)</span>
+                        <input
+                          required
+                          type="number"
+                          step="0.001"
+                          value={movementForm.quantity_delta}
+                          onChange={(event) =>
+                            setMovementForm({ ...movementForm, quantity_delta: event.target.value })
+                          }
+                          className="w-full rounded-lg border p-2.5 text-sm"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="mb-1 block text-sm font-medium">Unit cost</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={movementForm.unit_cost}
+                          onChange={(event) =>
+                            setMovementForm({ ...movementForm, unit_cost: event.target.value })
+                          }
+                          className="w-full rounded-lg border p-2.5 text-sm"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="mb-1 block text-sm font-medium">Reference</span>
+                        <input
+                          value={movementForm.reference}
+                          onChange={(event) =>
+                            setMovementForm({ ...movementForm, reference: event.target.value })
+                          }
+                          className="w-full rounded-lg border p-2.5 text-sm"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="mb-1 block text-sm font-medium">Notes</span>
+                        <textarea
+                          value={movementForm.notes}
+                          onChange={(event) =>
+                            setMovementForm({ ...movementForm, notes: event.target.value })
+                          }
+                          className="w-full rounded-lg border p-2.5 text-sm"
+                          rows={3}
+                        />
+                      </label>
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingMovement(null)}
+                          className="rounded-lg border px-4 py-2 text-sm"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={saving}
+                          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                        >
+                          {saving ? "Saving..." : "Save Movement"}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
               )}
               {action.startsWith("adjust-") && (
               <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">

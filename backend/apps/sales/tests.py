@@ -179,6 +179,100 @@ class SaleHistoryAccessTests(APITestCase):
         )
 
 
+class SalePaymentEditTests(APITestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.admin = user_model.objects.create_user(
+            username="payment-admin",
+            email="payment-admin@example.com",
+            password="Secure-admin-password-928!",
+            role="ADMINISTRATOR",
+        )
+        self.manager = user_model.objects.create_user(
+            username="payment-manager",
+            email="payment-manager@example.com",
+            password="Secure-manager-password-928!",
+            role="STORE_MANAGER",
+        )
+        self.location = StockLocation.objects.create(
+            name="Payment store",
+            code="PAYMENT-STORE",
+        )
+        self.sale = Sale.objects.create(
+            cashier=self.admin,
+            location=self.location,
+            subtotal=Decimal("10.00"),
+            total_amount=Decimal("10.00"),
+            status=Sale.Status.COMPLETED,
+        )
+        self.cash_payment = SalePayment.objects.create(
+            sale=self.sale,
+            payment_method=SalePayment.PaymentMethod.CASH,
+            amount=Decimal("5.00"),
+            received_by=self.admin,
+        )
+        self.card_payment = SalePayment.objects.create(
+            sale=self.sale,
+            payment_method=SalePayment.PaymentMethod.CARD,
+            amount=Decimal("5.00"),
+            received_by=self.admin,
+        )
+
+    def test_administrator_can_edit_payment_details_without_changing_total(self):
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.client.put(
+            reverse("sales-update-payments", args=[self.sale.id]),
+            [
+                {
+                    "id": self.cash_payment.id,
+                    "payment_method": "MPESA",
+                    "amount": "6.00",
+                    "transaction_reference": "ABC123",
+                },
+                {
+                    "id": self.card_payment.id,
+                    "payment_method": "CASH",
+                    "amount": "4.00",
+                    "transaction_reference": "",
+                },
+            ],
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.cash_payment.refresh_from_db()
+        self.card_payment.refresh_from_db()
+        self.assertEqual(self.cash_payment.amount, Decimal("6.00"))
+        self.assertEqual(
+            self.cash_payment.transaction_reference,
+            "ABC123",
+        )
+        self.assertEqual(self.card_payment.amount, Decimal("4.00"))
+
+    def test_non_administrator_cannot_edit_sale_payments(self):
+        self.client.force_authenticate(user=self.manager)
+
+        response = self.client.put(
+            reverse("sales-update-payments", args=[self.sale.id]),
+            [
+                {
+                    "id": self.cash_payment.id,
+                    "payment_method": "CASH",
+                    "amount": "5.00",
+                },
+                {
+                    "id": self.card_payment.id,
+                    "payment_method": "CARD",
+                    "amount": "5.00",
+                },
+            ],
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+
 class SplitPaymentCheckoutTests(APITestCase):
     def setUp(self):
         user_model = get_user_model()

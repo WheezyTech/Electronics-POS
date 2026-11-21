@@ -123,28 +123,30 @@ export default function Login() {
           </p>
           <div className="grid grid-cols-2 gap-3">
             <a
-              href="https://github.com/WheezyTech/Electronics-POS/releases/latest/download/Electronics%20POS%20Setup-1.0.0.exe"
+              href="https://github.com/WheezyTech/Electronics-POS/releases"
               target="_blank"
               rel="noreferrer"
+              title="Open Windows releases"
               className="flex items-center justify-center gap-2 rounded-lg border border-blue-200 px-3 py-2.5 text-sm font-medium text-blue-700 hover:bg-blue-50"
             >
               <MonitorDown size={17} />
-              Windows
+              Windows releases
               <Download size={15} />
             </a>
             <a
-              href="https://github.com/WheezyTech/Electronics-POS/releases/latest/download/Electronics%20POS%20Android-1.0.0.apk"
+              href="https://github.com/WheezyTech/Electronics-POS/releases"
               target="_blank"
               rel="noreferrer"
+              title="Open Android releases"
               className="flex items-center justify-center gap-2 rounded-lg border border-green-200 px-3 py-2.5 text-sm font-medium text-green-700 hover:bg-green-50"
             >
               <Smartphone size={17} />
-              Android
+              Android releases
               <Download size={15} />
             </a>
           </div>
           <p className="mt-2 text-center text-xs text-slate-400">
-            Install the Windows setup file or download the APK on Android.
+            Download installers from GitHub Releases when they are published.
           </p>
         </div>
 

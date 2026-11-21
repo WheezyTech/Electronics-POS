@@ -3,6 +3,8 @@ from decimal import Decimal
 
 from django.db.models import F, ExpressionWrapper, DecimalField
 from rest_framework import status, viewsets
+from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -18,14 +20,16 @@ from .serializers import (
     StockOperationSerializer,
     StockAdjustmentSerializer,
     StockTransferSerializer,
+    StockMovementEditSerializer,
 )
 from .permissions import InventoryReadPermission
-from .services import change_stock, transfer_stock
+from .services import change_stock, transfer_stock, update_stock_movement
 
 from django.db import transaction
 from django.utils import timezone
 
 from apps.products.models import Product
+from apps.accounts.permissions import IsAdministrator
 
 from .models import StocktakeSession, StocktakeLine
 from .serializers import (
@@ -59,7 +63,6 @@ class StockBalanceViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(location_id=location_id)
 
         return queryset
-
 
 class StockMovementViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = StockMovementSerializer
@@ -96,6 +99,40 @@ class StockMovementViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(reference__icontains=reference)
 
         return queryset
+
+    @action(
+        detail=True,
+        methods=["patch"],
+        url_path="edit",
+        permission_classes=[IsAuthenticated, IsAdministrator],
+    )
+    @transaction.atomic
+    def edit(self, request, pk=None):
+        movement = self.get_object()
+        serializer = StockMovementEditSerializer(
+            data=request.data,
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        try:
+            movement = update_stock_movement(
+                movement=movement,
+                quantity_delta=data.get(
+                    "quantity_delta", movement.quantity_delta
+                ),
+                movement_type=data.get(
+                    "movement_type", movement.movement_type
+                ),
+                unit_cost=data.get("unit_cost", movement.unit_cost),
+                reference=data.get("reference", movement.reference),
+                notes=data.get("notes", movement.notes),
+            )
+        except ValueError as error:
+            raise ValidationError({"detail": str(error)})
+
+        return Response(StockMovementSerializer(movement).data)
 
 
 class StockReceiveAPIView(APIView):

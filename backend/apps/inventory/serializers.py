@@ -1,4 +1,6 @@
 
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from apps.products.models import Product
@@ -88,6 +90,31 @@ class StockMovementSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = fields
+
+
+class StockMovementEditSerializer(serializers.Serializer):
+    movement_type = serializers.ChoiceField(
+        choices=StockMovement.MovementType.choices,
+        required=False,
+    )
+    quantity_delta = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=3,
+        required=False,
+    )
+    unit_cost = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        min_value=Decimal("0.00"),
+        required=False,
+        allow_null=True,
+    )
+    reference = serializers.CharField(
+        max_length=100,
+        required=False,
+        allow_blank=True,
+    )
+    notes = serializers.CharField(required=False, allow_blank=True)
 
 
 class StockOperationSerializer(serializers.Serializer):

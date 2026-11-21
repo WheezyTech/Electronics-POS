@@ -18,6 +18,8 @@ import {
   Clock3,
   Trash2,
   XCircle,
+  Pencil,
+  Save,
 } from "lucide-react";
 
 import api from "../../api/axios";
@@ -67,7 +69,25 @@ function StatusBadge({ status }) {
 }
 
 // SALE DETAILS MODAL
-function SaleDetails({ sale, onClose, onReceipt }) {
+function SaleDetails({
+  sale,
+  onClose,
+  onReceipt,
+  canEdit,
+  onSaveDetails,
+  onSavePayments,
+}) {
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [editingPayments, setEditingPayments] = useState(false);
+  const [details, setDetails] = useState({
+    customer_name: sale.customer_name || "",
+    customer_phone: sale.customer_phone || "",
+    notes: sale.notes || "",
+    discount_amount: sale.discount_amount || "0.00",
+    tax_amount: sale.tax_amount || "0.00",
+  });
+  const [payments, setPayments] = useState(sale.payments || []);
+
   return (
     <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-slate-950/50 p-4">
       <div className="my-6 w-full max-w-3xl rounded-2xl bg-white shadow-2xl">
@@ -98,14 +118,76 @@ function SaleDetails({ sale, onClose, onReceipt }) {
         <div className="grid gap-4 p-5 sm:grid-cols-2">
           <div className="rounded-xl bg-slate-50 p-4">
             <p className="text-xs text-slate-500">Customer</p>
-
-            <p className="mt-1 font-semibold">
-              {sale.customer_name || "Walk-in customer"}
-            </p>
-
-            <p className="text-sm text-slate-500">
-              {sale.customer_phone || "No phone provided"}
-            </p>
+            {editingDetails ? (
+              <div className="mt-2 space-y-2">
+                <input
+                  aria-label="Customer name"
+                  value={details.customer_name}
+                  onChange={(event) =>
+                    setDetails({ ...details, customer_name: event.target.value })
+                  }
+                  placeholder="Customer name"
+                  className="w-full rounded border px-2 py-1.5 text-sm"
+                />
+                <input
+                  aria-label="Customer phone"
+                  value={details.customer_phone}
+                  onChange={(event) =>
+                    setDetails({ ...details, customer_phone: event.target.value })
+                  }
+                  placeholder="Customer phone"
+                  className="w-full rounded border px-2 py-1.5 text-sm"
+                />
+                <textarea
+                  aria-label="Sale notes"
+                  value={details.notes}
+                  onChange={(event) =>
+                    setDetails({ ...details, notes: event.target.value })
+                  }
+                  placeholder="Notes"
+                  className="w-full rounded border px-2 py-1.5 text-sm"
+                  rows={2}
+                />
+                <input
+                  aria-label="Sale discount"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={details.discount_amount}
+                  onChange={(event) =>
+                    setDetails({ ...details, discount_amount: event.target.value })
+                  }
+                  placeholder="Discount"
+                  className="w-full rounded border px-2 py-1.5 text-sm"
+                />
+                <input
+                  aria-label="Sale tax"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={details.tax_amount}
+                  onChange={(event) =>
+                    setDetails({ ...details, tax_amount: event.target.value })
+                  }
+                  placeholder="Tax"
+                  className="w-full rounded border px-2 py-1.5 text-sm"
+                />
+              </div>
+            ) : (
+              <>
+                <p className="mt-1 font-semibold">
+                  {sale.customer_name || "Walk-in customer"}
+                </p>
+                <p className="text-sm text-slate-500">
+                  {sale.customer_phone || "No phone provided"}
+                </p>
+                {sale.notes && (
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">
+                    {sale.notes}
+                  </p>
+                )}
+              </>
+            )}
           </div>
 
           <div className="rounded-xl bg-slate-50 p-4">
@@ -193,20 +275,70 @@ function SaleDetails({ sale, onClose, onReceipt }) {
                 Payments
               </h3>
 
-              {(sale.payments || []).map((payment) => (
+              {(editingPayments ? payments : sale.payments || []).map((payment, index) => (
                 <div
                   key={payment.id}
                   className="mb-2 rounded-lg border p-3 text-sm"
                 >
-                  <div className="flex justify-between">
-                    <strong>{payment.payment_method}</strong>
-                    <strong>{money(payment.amount)}</strong>
-                  </div>
-
-                  {payment.transaction_reference && (
-                    <p className="mt-1 break-all text-xs text-slate-500">
-                      Ref: {payment.transaction_reference}
-                    </p>
+                  {editingPayments ? (
+                    <div className="space-y-2">
+                      <select
+                        aria-label="Payment method"
+                        value={payment.payment_method}
+                        onChange={(event) => {
+                          const next = [...payments];
+                          next[index] = {
+                            ...payment,
+                            payment_method: event.target.value,
+                          };
+                          setPayments(next);
+                        }}
+                        className="w-full rounded border px-2 py-1.5"
+                      >
+                        {["CASH", "MPESA", "BANK", "CARD", "OTHER"].map((method) => (
+                          <option key={method} value={method}>{method}</option>
+                        ))}
+                      </select>
+                      <input
+                        aria-label="Payment amount"
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={payment.amount}
+                        onChange={(event) => {
+                          const next = [...payments];
+                          next[index] = { ...payment, amount: event.target.value };
+                          setPayments(next);
+                        }}
+                        className="w-full rounded border px-2 py-1.5"
+                      />
+                      <input
+                        aria-label="Payment reference"
+                        value={payment.transaction_reference || ""}
+                        onChange={(event) => {
+                          const next = [...payments];
+                          next[index] = {
+                            ...payment,
+                            transaction_reference: event.target.value,
+                          };
+                          setPayments(next);
+                        }}
+                        placeholder="Transaction reference"
+                        className="w-full rounded border px-2 py-1.5"
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between">
+                        <strong>{payment.payment_method}</strong>
+                        <strong>{money(payment.amount)}</strong>
+                      </div>
+                      {payment.transaction_reference && (
+                        <p className="mt-1 break-all text-xs text-slate-500">
+                          Ref: {payment.transaction_reference}
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
               ))}
@@ -242,6 +374,69 @@ function SaleDetails({ sale, onClose, onReceipt }) {
           </div>
 
           <div className="mt-5 flex flex-wrap justify-end gap-2">
+            {canEdit && !editingDetails && (
+              <button
+                onClick={() => setEditingDetails(true)}
+                className="inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <Pencil size={16} />
+                Edit Sale
+              </button>
+            )}
+            {canEdit && !editingPayments && sale.payments?.length > 0 && (
+              <button
+                onClick={() => setEditingPayments(true)}
+                className="inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <Pencil size={16} />
+                Edit Payments
+              </button>
+            )}
+            {editingDetails && (
+              <>
+                <button
+                  onClick={() => setEditingDetails(false)}
+                  className="rounded-lg border px-4 py-2.5 text-sm font-semibold text-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    if (await onSaveDetails(sale, details)) {
+                      setEditingDetails(false);
+                    }
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+                >
+                  <Save size={16} />
+                  Save Sale
+                </button>
+              </>
+            )}
+            {editingPayments && (
+              <>
+                <button
+                  onClick={() => {
+                    setPayments(sale.payments || []);
+                    setEditingPayments(false);
+                  }}
+                  className="rounded-lg border px-4 py-2.5 text-sm font-semibold text-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    if (await onSavePayments(sale, payments)) {
+                      setEditingPayments(false);
+                    }
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+                >
+                  <Save size={16} />
+                  Save Payments
+                </button>
+              </>
+            )}
             {sale.status === "DRAFT" && (
               <Link
                 to="/pos"
@@ -300,6 +495,7 @@ export default function Sales() {
 
   const canDeleteSales =
     user?.is_superuser || user?.role === "ADMINISTRATOR";
+  const canEditSales = canDeleteSales;
 
   const pageSize = 12;
 
@@ -492,6 +688,56 @@ export default function Sales() {
         err.response?.data?.error ||
         "Receipt is available only for completed sales."
       );
+    }
+  };
+
+  const saveSaleDetails = async (sale, details) => {
+    setError("");
+    try {
+      const response = await api.patch(`/sales/sales/${sale.id}/`, details);
+      setSelectedSale(response.data);
+      setSales((currentSales) =>
+        currentSales.map((item) => item.id === response.data.id ? response.data : item)
+      );
+      setSuccessMessage(`${sale.reference} was updated.`);
+      return true;
+    } catch (err) {
+      setError(
+        err.response?.data?.detail ||
+        err.response?.data?.error ||
+        "Unable to update this sale."
+      );
+      return false;
+    }
+  };
+
+  const saveSalePayments = async (sale, payments) => {
+    setError("");
+    try {
+      const response = await api.put(
+        `/sales/sales/${sale.id}/payments/`,
+        payments.map((payment) => ({
+          id: payment.id,
+          payment_method: payment.payment_method,
+          amount: payment.amount,
+          transaction_reference: payment.transaction_reference || "",
+        }))
+      );
+      setSelectedSale(response.data);
+      setSales((currentSales) =>
+        currentSales.map((item) => item.id === response.data.id ? response.data : item)
+      );
+      setSuccessMessage(`${sale.reference} payment records were updated.`);
+      return true;
+    } catch (err) {
+      setError(
+        err.response?.data?.detail ||
+        err.response?.data?.error ||
+        (typeof err.response?.data === "object"
+          ? JSON.stringify(err.response.data)
+          : "Unable to update these payment records.")
+      );
+      return false;
     }
   };
 
@@ -907,6 +1153,9 @@ export default function Sales() {
           sale={selectedSale}
           onClose={() => setSelectedSale(null)}
           onReceipt={openReceipt}
+          canEdit={canEditSales}
+          onSaveDetails={saveSaleDetails}
+          onSavePayments={saveSalePayments}
         />
       )}
 

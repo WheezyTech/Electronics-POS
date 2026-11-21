@@ -12,7 +12,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.permissions import ReadOnlyStaffRoles
+from apps.accounts.permissions import IsAdministrator, ReadOnlyStaffRoles
 from apps.inventory.models import StockMovement
 from apps.inventory.models import StockBalance
 from apps.inventory.services import change_stock
@@ -24,6 +24,7 @@ from .serializers import (
     SaleItemSerializer,
     SaleItemCreateSerializer,
     CheckoutSerializer,
+    SalePaymentEditSerializer,
 )
 
 from django.db.models import Sum
@@ -143,6 +144,65 @@ class SaleViewSet(viewsets.ModelViewSet):
 
         self.perform_destroy(sale)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(
+        detail=True,
+        methods=["put"],
+        url_path="payments",
+        permission_classes=[IsAuthenticated, IsAdministrator],
+    )
+    @transaction.atomic
+    def update_payments(self, request, pk=None):
+        sale = Sale.objects.select_for_update().get(pk=pk)
+        if sale.status != Sale.Status.COMPLETED:
+            raise ValidationError(
+                "Only completed sale payments can be edited."
+            )
+
+        serializer = SalePaymentEditSerializer(
+            data=request.data,
+            many=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        payment_data = serializer.validated_data
+
+        payment_ids = [item["id"] for item in payment_data]
+        existing_ids = set(
+            sale.payments.values_list("id", flat=True)
+        )
+        if len(payment_ids) != len(set(payment_ids)) or set(payment_ids) != existing_ids:
+            raise ValidationError(
+                "Provide each existing payment exactly once."
+            )
+
+        payment_total = sum(
+            (item["amount"] for item in payment_data),
+            Decimal("0.00"),
+        )
+        if payment_total != sale.total_amount:
+            raise ValidationError({
+                "payments": (
+                    f"Payment total must equal the sale total of "
+                    f"{sale.total_amount}."
+                )
+            })
+
+        payments_by_id = {
+            payment.id: payment
+            for payment in sale.payments.select_for_update().all()
+        }
+        for item in payment_data:
+            payment = payments_by_id[item["id"]]
+            payment.payment_method = item["payment_method"]
+            payment.amount = item["amount"]
+            payment.transaction_reference = item.get(
+                "transaction_reference", ""
+            )
+            payment.save(update_fields=[
+                "payment_method", "amount", "transaction_reference",
+            ])
+
+        return Response(SaleSerializer(sale).data)
 
     @action(detail=True, methods=["post"], url_path="items")
     def add_item(self, request, pk=None):
