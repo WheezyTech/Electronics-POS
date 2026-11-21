@@ -13,7 +13,13 @@ from rest_framework_simplejwt.tokens import AccessToken
 from apps.accounts.models import Device, OfflineAuthorization
 from apps.inventory.models import StockBalance, StockLocation
 from apps.products.models import Category, Product, Unit
-from .models import Sale, SaleItem, SalePayment, SaleReturn
+from .models import (
+    Sale,
+    SaleItem,
+    SalePayment,
+    SaleReturn,
+    SaleReturnItem,
+)
 from .mpesa import MpesaRequestError, initiate_stk_push
 
 
@@ -747,4 +753,99 @@ class SaleReturnApprovalPermissionTests(APITestCase):
         self.assertEqual(
             response.data["error"],
             "Add at least one item before completing the return.",
+        )
+
+
+class SaleReturnDeletePermissionTests(APITestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.admin = user_model.objects.create_user(
+            username="return-admin",
+            email="return-admin@example.com",
+            password="test-password",
+            role="ADMINISTRATOR",
+        )
+        self.cashier = user_model.objects.create_user(
+            username="return-delete-cashier",
+            email="return-delete-cashier@example.com",
+            password="test-password",
+            role="CASHIER",
+        )
+        self.location = StockLocation.objects.create(
+            name="Return deletion store",
+            code="RETURN-DELETE",
+        )
+        category = Category.objects.create(name="Return deletion products")
+        unit = Unit.objects.create(name="Piece", abbreviation="pc")
+        product = Product.objects.create(
+            name="Return deletion item",
+            sku="RETURN-DELETE-ITEM",
+            category=category,
+            unit=unit,
+            cost_price=Decimal("5.00"),
+            selling_price=Decimal("10.00"),
+            created_by=self.cashier,
+        )
+        self.sale = Sale.objects.create(
+            cashier=self.cashier,
+            location=self.location,
+            status=Sale.Status.COMPLETED,
+        )
+        self.sale_item = SaleItem.objects.create(
+            sale=self.sale,
+            product=product,
+            quantity=Decimal("1"),
+            unit_price=Decimal("10.00"),
+            cost_price=Decimal("5.00"),
+        )
+        self.sale_return = SaleReturn.objects.create(
+            sale=self.sale,
+            reason=SaleReturn.Reason.DEFECTIVE,
+            processed_by=self.cashier,
+        )
+        self.return_item = SaleReturnItem.objects.create(
+            sale_return=self.sale_return,
+            sale_item=self.sale_item,
+            quantity=Decimal("1"),
+            unit_price=Decimal("10.00"),
+            refund_amount=Decimal("10.00"),
+        )
+
+    def delete_return(self):
+        return self.client.delete(
+            reverse("sale-returns-detail", args=[self.sale_return.id])
+        )
+
+    def test_admin_can_delete_uncompleted_return_and_unblock_sale_item(self):
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.delete_return()
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(
+            SaleReturnItem.objects.filter(pk=self.return_item.pk).exists()
+        )
+        self.sale_item.delete()
+        self.assertFalse(SaleItem.objects.filter(pk=self.sale_item.pk).exists())
+
+    def test_non_admin_cannot_delete_return(self):
+        self.client.force_authenticate(user=self.cashier)
+
+        response = self.delete_return()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(
+            SaleReturn.objects.filter(pk=self.sale_return.pk).exists()
+        )
+
+    def test_admin_cannot_delete_completed_return(self):
+        self.sale_return.status = SaleReturn.Status.COMPLETED
+        self.sale_return.save(update_fields=["status"])
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.delete_return()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(
+            SaleReturn.objects.filter(pk=self.sale_return.pk).exists()
         )

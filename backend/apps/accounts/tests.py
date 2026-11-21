@@ -84,6 +84,32 @@ class CustomTokenObtainPairSerializerTests(TestCase):
         self.assertIn("device_sync_id", serializer.errors)
 
 
+class AdministratorModelPermissionTests(TestCase):
+    def test_administrator_role_has_all_model_permissions(self):
+        admin = User.objects.create_user(
+            username="permission-admin",
+            email="permission-admin@example.com",
+            password="SecurePassword123!",
+            role=User.Role.ADMINISTRATOR,
+            is_staff=True,
+        )
+
+        self.assertTrue(admin.has_perm("sales.change_sale"))
+        self.assertTrue(admin.has_perm("sales.delete_salereturn"))
+        self.assertTrue(admin.has_module_perms("inventory"))
+
+    def test_other_roles_do_not_receive_administrator_permissions(self):
+        cashier = User.objects.create_user(
+            username="permission-cashier",
+            email="permission-cashier@example.com",
+            password="SecurePassword123!",
+            role=User.Role.CASHIER,
+        )
+
+        self.assertFalse(cashier.has_perm("sales.change_sale"))
+        self.assertFalse(cashier.has_module_perms("inventory"))
+
+
 @override_settings(
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
     FRONTEND_URL="https://pos.example.test",

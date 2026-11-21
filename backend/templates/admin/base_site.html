@@ -1,0 +1,19 @@
+{% extends "admin/base.html" %}
+{% load static %}
+
+{% block title %}{{ title }} | Electronics POS{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'admin/css/electronics_pos_admin.css' %}">
+{% endblock %}
+
+{% block branding %}
+  <div id="site-name" class="electronics-pos-branding">
+    <a href="{% url 'admin:index' %}" class="electronics-pos-brand">
+      <span class="electronics-pos-mark" aria-hidden="true">EP</span>
+      <span>Electronics POS</span>
+    </a>
+    <span class="electronics-pos-subtitle">Management Console</span>
+  </div>
+{% endblock %}

@@ -1,0 +1,177 @@
+:root {
+  --primary: #123b5d;
+  --secondary: #087f8c;
+  --accent: #16a394;
+  --primary-fg: #fff;
+  --body-fg: #203449;
+  --body-bg: #f3f6fa;
+  --header-color: #fff;
+  --header-branding-color: #fff;
+  --header-bg: #102f4b;
+  --breadcrumbs-fg: #dce8f1;
+  --breadcrumbs-link-fg: #fff;
+  --breadcrumbs-bg: #1b4668;
+  --link-fg: #086e87;
+  --link-hover-color: #064e68;
+  --hairline-color: #dce4ec;
+  --border-color: #cbd6e1;
+  --button-bg: #087f8c;
+  --button-hover-bg: #066875;
+  --default-button-bg: #123b5d;
+  --default-button-hover-bg: #0c2e4a;
+  --close-button-bg: #687b8f;
+  --close-button-hover-bg: #506477;
+  --delete-button-bg: #b42332;
+  --delete-button-hover-bg: #8f1d29;
+  --object-tools-bg: #087f8c;
+  --object-tools-hover-bg: #066875;
+}
+
+body {
+  background: var(--body-bg);
+}
+
+#header {
+  min-height: 4.25rem;
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(110deg, #102f4b, #174c70);
+  box-shadow: 0 3px 14px rgb(16 47 75 / 16%);
+}
+
+.electronics-pos-branding {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.electronics-pos-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  color: #fff !important;
+  font-size: 1.1rem;
+  font-weight: 750;
+  letter-spacing: 0.01em;
+}
+
+.electronics-pos-brand:hover {
+  color: #d8f6f1 !important;
+}
+
+.electronics-pos-mark {
+  display: inline-grid;
+  width: 2.15rem;
+  height: 2.15rem;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 0.7rem;
+  background: #0a8c91;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.electronics-pos-subtitle {
+  padding-left: 1rem;
+  border-left: 1px solid rgb(255 255 255 / 25%);
+  color: #c5d6e4;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+#user-tools {
+  color: #e6eef5;
+  font-size: 0.8rem;
+}
+
+#user-tools a {
+  color: #fff;
+}
+
+.breadcrumbs {
+  padding: 0.8rem 1.5rem;
+}
+
+#content {
+  padding: 1.5rem;
+}
+
+#content h1 {
+  color: #153853;
+  font-size: 1.65rem;
+  font-weight: 750;
+}
+
+#content-main .module,
+.module,
+.inline-group,
+#changelist-filter,
+.submit-row {
+  overflow: hidden;
+  border: 1px solid #e0e7ef;
+  border-radius: 0.8rem;
+  background: #fff;
+  box-shadow: 0 5px 18px rgb(24 53 79 / 5%);
+}
+
+.module h2,
+.module caption,
+.inline-group h2 {
+  background: #eaf2f7;
+  color: #173d5a;
+  font-weight: 700;
+}
+
+#changelist table thead th {
+  background: #f1f5f9;
+}
+
+#changelist table tbody tr:hover,
+.results table tbody tr:hover {
+  background: #f2faf9;
+}
+
+input,
+select,
+textarea {
+  border-radius: 0.4rem;
+}
+
+.button,
+input[type="submit"],
+input[type="button"],
+.submit-row input,
+a.button {
+  border-radius: 0.45rem;
+  font-weight: 650;
+}
+
+.messagelist li {
+  border-radius: 0.55rem;
+  box-shadow: 0 3px 12px rgb(24 53 79 / 6%);
+}
+
+.login #container {
+  overflow: hidden;
+  border: 1px solid #e0e7ef;
+  border-radius: 1rem;
+  box-shadow: 0 18px 55px rgb(16 47 75 / 14%);
+}
+
+@media (max-width: 767px) {
+  #header {
+    padding: 0.65rem 1rem;
+  }
+
+  .electronics-pos-branding {
+    gap: 0;
+  }
+
+  .electronics-pos-subtitle {
+    display: none;
+  }
+
+  #content {
+    padding: 1rem;
+  }
+}

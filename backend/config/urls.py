@@ -1,6 +1,10 @@
 from django.contrib import admin
 from django.urls import path, include
 
+admin.site.site_header = "Electronics POS"
+admin.site.site_title = "Electronics POS"
+admin.site.index_title = "Management Dashboard"
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/auth/', include('apps.accounts.urls')),

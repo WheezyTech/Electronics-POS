@@ -484,6 +484,27 @@ class SaleReturnViewSet(viewsets.ModelViewSet):
 
         return queryset
 
+    @transaction.atomic
+    def destroy(self, request, *args, **kwargs):
+        user = request.user
+        if not (
+            user.is_superuser
+            or getattr(user, "role", "") == "ADMINISTRATOR"
+        ):
+            raise PermissionDenied(
+                "Only administrators can delete sales returns."
+            )
+
+        sale_return = self.get_object()
+        if sale_return.status == SaleReturn.Status.COMPLETED:
+            raise ValidationError(
+                "Completed returns cannot be deleted because they have "
+                "already changed stock and recorded a refund."
+            )
+
+        sale_return.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
     @action(detail=True, methods=["post"], url_path="items")
     def add_item(self, request, pk=None):
         sale_return = self.get_object()

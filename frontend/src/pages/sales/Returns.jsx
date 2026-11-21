@@ -4,7 +4,7 @@ import api from "../../api/axios";
 import { useAuth } from "../../context/AuthContext";
 import {
   Search, RefreshCw, Plus, Eye, X, RotateCcw,
-  CheckCircle, Ban
+  CheckCircle, Ban, Trash2
 } from "lucide-react";
 
 const money = (value) =>
@@ -54,6 +54,8 @@ export default function Returns() {
   const canApproveReturns =
     user?.is_superuser ||
     ["ADMINISTRATOR", "STORE_MANAGER"].includes(user?.role);
+  const canDeleteReturns =
+    user?.is_superuser || user?.role === "ADMINISTRATOR";
 
   const [returns, setReturns] = useState([]);
   const [sales, setSales] = useState([]);
@@ -368,6 +370,31 @@ export default function Returns() {
       setError(
         err.response?.data?.detail ||
         "Unable to cancel return."
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteReturn = async () => {
+    if (!selectedReturn) return;
+
+    const confirmed = window.confirm(
+      `Delete ${selectedReturn.reference} and its return items? Completed returns cannot be deleted.`
+    );
+    if (!confirmed) return;
+
+    setSaving(true);
+    setError("");
+
+    try {
+      await api.delete(`/sales/returns/${selectedReturn.id}/`);
+      setSelectedReturn(null);
+      await loadReturns();
+    } catch (err) {
+      setError(
+        err.response?.data?.detail ||
+        "Unable to delete this return."
       );
     } finally {
       setSaving(false);
@@ -721,6 +748,20 @@ export default function Returns() {
             </div>
 
             <div className="space-y-5 p-5">
+              {canDeleteReturns &&
+                selectedReturn.status !== "COMPLETED" && (
+                  <div className="flex justify-end">
+                    <button
+                      onClick={deleteReturn}
+                      disabled={saving}
+                      className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
+                    >
+                      <Trash2 size={16} />
+                      Delete Return
+                    </button>
+                  </div>
+                )}
+
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <p className="text-xs text-gray-500">Original sale</p>
