@@ -15,6 +15,7 @@ import {
   LogOut,
   ShieldCheck,
   LockKeyhole,
+  Flame,
 } from "lucide-react";
 
 import { useAuth } from "../context/AuthContext";
@@ -27,6 +28,7 @@ const navigation = [
   { name: "Barcodes", path: "/barcodes", icon: Barcode, roles: ["ADMINISTRATOR", "STORE_MANAGER"] },
   { name: "Inventory", path: "/inventory", icon: Warehouse, roles: ["ADMINISTRATOR", "STORE_MANAGER"] },
   { name: "Purchasing", path: "/purchasing", icon: Truck, roles: ["ADMINISTRATOR", "STORE_MANAGER"] },
+  { name: "Gas & LPG", path: "/gas", icon: Flame, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER"] },
   { name: "Customers", path: "/customers", icon: Users, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER"] },
   { name: "Sales", path: "/sales", icon: BarChart3, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER"] },
   { name: "Returns", path: "/returns", icon: RotateCcw, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER"] },

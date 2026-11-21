@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'apps.inventory.apps.InventoryConfig',
     'apps.purchases.apps.PurchasesConfig',
     'apps.sales.apps.SalesConfig',
+    'apps.gas.apps.GasConfig',
     "apps.reports.apps.ReportsConfig",
     "apps.configuration.apps.ConfigurationConfig"
 ]
@@ -95,8 +96,10 @@ CORS_ALLOWED_ORIGINS = [
     # Production React frontend
     "https://radiant-inspiration-production-77d51767.up.railway.app",
 
-    # Electron application
+    # Electron application and Capacitor Android WebView
     "null",
+    "https://localhost",
+    "capacitor://localhost",
 ]
 
 ROOT_URLCONF = 'config.urls'

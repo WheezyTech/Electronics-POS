@@ -29,6 +29,7 @@ import Settings from "./pages/settings/Settings";
 import StoreSetup from "./pages/settings/StoreSetup";
 import OfflineAccess from "./pages/settings/OfflineAccess";
 import CashierPin from "./pages/settings/CashierPin";
+import Gas from "./pages/gas/Gas";
 
 // Electron exposes electronAPI through the preload script.
 const Router = window.electronAPI ? HashRouter : BrowserRouter;
@@ -86,6 +87,7 @@ function App() {
                 <Route path="/products" element={<Products />} />
                 <Route path="/inventory" element={<Inventory />} />
                 <Route path="/purchasing" element={<Purchasing />} />
+                <Route path="/gas" element={<Gas />} />
                 <Route path="/barcodes" element={<Barcodes />} />
                 <Route
                   element={
