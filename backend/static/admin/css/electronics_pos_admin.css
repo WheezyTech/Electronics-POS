@@ -31,6 +31,10 @@ body {
   background: var(--body-bg);
 }
 
+#site-name {
+  margin: 0;
+}
+
 #header {
   min-height: 4.25rem;
   padding: 0.75rem 1.5rem;
@@ -90,16 +94,20 @@ body {
 
 .breadcrumbs {
   padding: 0.8rem 1.5rem;
+  font-size: 0.8rem;
 }
 
 #content {
   padding: 1.5rem;
+  max-width: 1680px;
+  margin: 0 auto;
 }
 
 #content h1 {
   color: #153853;
   font-size: 1.65rem;
   font-weight: 750;
+  letter-spacing: -0.025em;
 }
 
 #content-main .module,
@@ -114,6 +122,10 @@ body {
   box-shadow: 0 5px 18px rgb(24 53 79 / 5%);
 }
 
+.module {
+  margin-bottom: 1.25rem;
+}
+
 .module h2,
 .module caption,
 .inline-group h2 {
@@ -122,8 +134,31 @@ body {
   font-weight: 700;
 }
 
+.module h2,
+.inline-group h2 {
+  padding: 0.85rem 1rem;
+}
+
+#content-main .module table {
+  margin: 0;
+}
+
+#content-main .module table th,
+#content-main .module table td {
+  padding: 0.8rem 1rem;
+}
+
+#content-main .module table th a {
+  font-weight: 650;
+}
+
 #changelist table thead th {
   background: #f1f5f9;
+}
+
+#changelist table th,
+#changelist table td {
+  padding: 0.75rem;
 }
 
 #changelist table tbody tr:hover,
@@ -146,6 +181,19 @@ a.button {
   font-weight: 650;
 }
 
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: #168b91;
+  box-shadow: 0 0 0 3px rgb(22 139 145 / 14%);
+  outline: 0;
+}
+
+.paginator a,
+.object-tools a {
+  border-radius: 0.4rem;
+}
+
 .messagelist li {
   border-radius: 0.55rem;
   box-shadow: 0 3px 12px rgb(24 53 79 / 6%);
@@ -163,6 +211,10 @@ a.button {
     padding: 0.65rem 1rem;
   }
 
+  .breadcrumbs {
+    padding: 0.7rem 1rem;
+  }
+
   .electronics-pos-branding {
     gap: 0;
   }
@@ -173,5 +225,9 @@ a.button {
 
   #content {
     padding: 1rem;
+  }
+
+  #content h1 {
+    font-size: 1.4rem;
   }
 }

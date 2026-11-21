@@ -58,31 +58,27 @@ class SalePaymentAdmin(admin.ModelAdmin):
 
 class SaleReturnItemInline(admin.TabularInline):
     model = SaleReturnItem
-    extra = 0
-    can_delete = False
-    readonly_fields = (
-        "sale_item",
-        "quantity",
-        "unit_price",
-        "refund_amount",
-    )
+    extra = 1
 
 
 class SaleRefundPaymentInline(admin.TabularInline):
     model = SaleRefundPayment
-    extra = 0
-    can_delete = False
-    readonly_fields = (
-        "amount",
-        "payment_method",
-        "transaction_reference",
-        "processed_by",
-        "created_at",
-    )
+    extra = 1
+
+
+class AdministratorMutableSalesAdmin(admin.ModelAdmin):
+    def has_add_permission(self, request):
+        return request.user.is_superuser or getattr(request.user, "role", None) == "ADMINISTRATOR"
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_superuser or getattr(request.user, "role", None) == "ADMINISTRATOR"
+
+    def has_delete_permission(self, request, obj=None):
+        return request.user.is_superuser or getattr(request.user, "role", None) == "ADMINISTRATOR"
 
 
 @admin.register(SaleReturn)
-class SaleReturnAdmin(admin.ModelAdmin):
+class SaleReturnAdmin(AdministratorMutableSalesAdmin):
     list_display = (
         "reference",
         "sale",
@@ -101,10 +97,6 @@ class SaleReturnAdmin(admin.ModelAdmin):
     )
     readonly_fields = (
         "reference",
-        "sale",
-        "status",
-        "refund_amount",
-        "processed_by",
         "created_at",
         "completed_at",
     )
@@ -115,9 +107,6 @@ class SaleReturnAdmin(admin.ModelAdmin):
         if obj is not None and obj.status == SaleReturn.Status.COMPLETED:
             return (*readonly_fields, "reason", "notes")
         return readonly_fields
-
-    def has_add_permission(self, request):
-        return False
 
     def has_delete_permission(self, request, obj=None):
         if obj is not None and obj.status == SaleReturn.Status.COMPLETED:
@@ -142,7 +131,7 @@ class ReadOnlySalesAdmin(admin.ModelAdmin):
 
 
 @admin.register(SaleReturnItem)
-class SaleReturnItemAdmin(ReadOnlySalesAdmin):
+class SaleReturnItemAdmin(AdministratorMutableSalesAdmin):
     list_display = (
         "sale_return",
         "sale_item",
@@ -158,7 +147,7 @@ class SaleReturnItemAdmin(ReadOnlySalesAdmin):
 
 
 @admin.register(SaleRefundPayment)
-class SaleRefundPaymentAdmin(ReadOnlySalesAdmin):
+class SaleRefundPaymentAdmin(AdministratorMutableSalesAdmin):
     list_display = (
         "sale_return",
         "amount",
@@ -205,7 +194,7 @@ class CashMovementAdmin(ReadOnlySalesAdmin):
 
 
 @admin.register(MpesaTransaction)
-class MpesaTransactionAdmin(ReadOnlySalesAdmin):
+class MpesaTransactionAdmin(AdministratorMutableSalesAdmin):
     list_display = (
         "sale",
         "phone_number",
@@ -223,12 +212,8 @@ class MpesaTransactionAdmin(ReadOnlySalesAdmin):
         "mpesa_receipt_number",
     )
     readonly_fields = (
-        "sale",
-        "phone_number",
-        "amount",
         "merchant_request_id",
         "checkout_request_id",
-        "status",
         "result_code",
         "result_description",
         "mpesa_receipt_number",
