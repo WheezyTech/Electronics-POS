@@ -105,3 +105,24 @@ def send_password_reset(user):
         message,
         user.email,
     )
+
+
+def send_contact_message(*, name, email, phone, subject, message):
+    recipient = getattr(settings, "CONTACT_TO_EMAIL", "")
+    if not recipient:
+        raise ImproperlyConfigured(
+            "CONTACT_TO_EMAIL is missing from environment variables."
+        )
+
+    body = (
+        f"Name: {name}\n"
+        f"Email: {email}\n"
+        f"Phone: {phone or 'Not provided'}\n"
+        f"Subject: {subject}\n\n"
+        f"{message}"
+    )
+    return _send_resend_email(
+        f"Electronics POS website: {subject}",
+        body,
+        recipient,
+    )

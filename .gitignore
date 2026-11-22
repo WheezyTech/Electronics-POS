@@ -44,3 +44,7 @@ Desktop.ini
 frontend/release/
 frontend/dist/
 frontend/node_modules/
+
+# Desktop installer distribution files
+frontend/public/downloads/*.exe
+frontend/public/downloads/*.blockmap

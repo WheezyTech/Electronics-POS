@@ -7,7 +7,7 @@ import {
   Navigate,
 } from "react-router-dom";
 
-import { AuthProvider, useAuth } from "./context/AuthContext";
+import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import DashboardLayout from "./layouts/DashboardLayout";
 
@@ -30,32 +30,26 @@ import StoreSetup from "./pages/settings/StoreSetup";
 import OfflineAccess from "./pages/settings/OfflineAccess";
 import CashierPin from "./pages/settings/CashierPin";
 import Gas from "./pages/gas/Gas";
+import PublicLayout from "./layouts/PublicLayout";
+import Home from "./pages/public/Home";
+import About from "./pages/public/About";
+import Services from "./pages/public/Services";
+import Contact from "./pages/public/Contact";
 
 // Electron exposes electronAPI through the preload script.
 const Router = window.electronAPI ? HashRouter : BrowserRouter;
-
-function HomeRoute() {
-  const { user, loading } = useAuth();
-
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        Loading account...
-      </div>
-    );
-  }
-  if (!user) return <Navigate to="/login" replace />;
-  const path = ["ACCOUNTANT", "AUDITOR"].includes(user.role)
-    ? "/reports"
-    : "/dashboard";
-  return <Navigate to={path} replace />;
-}
 
 function App() {
   return (
     <Router>
       <AuthProvider>
         <Routes>
+          <Route element={<PublicLayout />}>
+            <Route path="/" element={<Home />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/services" element={<Services />} />
+            <Route path="/contact" element={<Contact />} />
+          </Route>
           <Route path="/login" element={<Login />} />
           <Route path="/forgot-password" element={<PasswordReset />} />
           <Route path="/reset-password" element={<PasswordReset />} />
@@ -135,8 +129,6 @@ function App() {
               </Route>
             </Route>
           </Route>
-
-          <Route path="/" element={<HomeRoute />} />
 
           <Route
             path="*"

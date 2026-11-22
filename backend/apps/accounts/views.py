@@ -6,6 +6,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.exceptions import ImproperlyConfigured
 from django.db import transaction
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
@@ -300,9 +301,27 @@ class UserManagementViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        with transaction.atomic():
-            user = serializer.save()
+        user = serializer.save()
+        self.email_verification_sent = False
+        self.email_verification_error = ""
+        try:
             send_email_verification(user)
+            self.email_verification_sent = True
+        except (ImproperlyConfigured, RuntimeError) as exc:
+            self.email_verification_error = str(exc)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        data = dict(serializer.data)
+        data["email_verification_sent"] = getattr(
+            self, "email_verification_sent", False
+        )
+        if getattr(self, "email_verification_error", ""):
+            data["email_verification_error"] = self.email_verification_error
+        return Response(data, status=status.HTTP_201_CREATED, headers=headers)
 
     @action(
         detail=False,

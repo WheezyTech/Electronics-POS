@@ -155,7 +155,11 @@ export default function StoreSetup() {
           users: [response.data, ...previous.users],
         }));
         setUserForm(emptyUser);
-        setMessage("Account created. A verification link was sent to the user’s email.");
+        setMessage(
+          response.data?.email_verification_sent
+            ? "Account created. A verification link was sent to the user’s email."
+            : "Account created, but the verification email could not be sent. Resend it after configuring email delivery."
+        );
       } else {
         const payload = {
           name: catalogForm.name,

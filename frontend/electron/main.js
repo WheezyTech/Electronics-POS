@@ -1,5 +1,6 @@
 
 import { app, BrowserWindow, shell } from "electron";
+import { autoUpdater } from "electron-updater";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -29,7 +30,10 @@ function createWindow() {
   });
 
   if (app.isPackaged) {
-    mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
+    mainWindow.loadFile(
+      path.join(__dirname, "..", "dist", "index.html"),
+      { hash: "/login" },
+    );
   } else {
     mainWindow.loadURL("http://localhost:5173");
   }
@@ -43,6 +47,21 @@ app.whenReady().then(() => {
       createWindow();
     }
   });
+
+  if (app.isPackaged) {
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    app.whenReady().then(() => {
+      autoUpdater.checkForUpdatesAndNotify();
+    });
+
+    autoUpdater.on("update-downloaded", () => {
+      setTimeout(() => {
+        autoUpdater.quitAndInstall(false, true);
+      }, 3000);
+    });
+  }
 });
 
 app.on("window-all-closed", () => {

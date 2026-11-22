@@ -1,6 +1,7 @@
 import uuid
 from datetime import timedelta
 from urllib.parse import parse_qs, urlparse
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core import mail
@@ -137,12 +138,29 @@ class StoreManagerUserManagementTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 201)
+        self.assertFalse(response.data["email_verification_sent"])
+        self.assertIn("RESEND_API_KEY", response.data["email_verification_error"])
         cashier = User.objects.get(username="new-cashier")
         self.assertEqual(cashier.role, User.Role.CASHIER)
         self.assertFalse(cashier.is_staff)
         self.assertTrue(cashier.check_password("Secure-cashier-password-928!"))
         self.assertFalse(cashier.email_verified)
-        self.assertEqual(len(mail.outbox), 1)
+
+    @patch("apps.accounts.views.send_email_verification")
+    def test_manager_registration_reports_successful_email_delivery(self, send_email):
+        response = self.client.post(
+            reverse("users-list"),
+            {
+                "username": "email-cashier",
+                "email": "email-cashier@example.com",
+                "password": "Secure-cashier-password-928!",
+                "role": User.Role.CASHIER,
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["email_verification_sent"])
+        send_email.assert_called_once()
 
     def test_manager_can_register_accountants_and_auditors(self):
         for role, username in (
@@ -340,7 +358,8 @@ class AdministratorUserManagementTests(TestCase):
         )
         self.client.force_authenticate(user=self.admin)
 
-    def test_administrator_can_register_manager(self):
+    @patch("apps.accounts.views.send_email_verification")
+    def test_administrator_can_register_manager(self, send_email):
         response = self.client.post(
             reverse("users-list"),
             {
@@ -352,11 +371,12 @@ class AdministratorUserManagementTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["email_verification_sent"])
         self.assertEqual(
             User.objects.get(username="new-manager").role,
             User.Role.STORE_MANAGER,
         )
-        self.assertEqual(len(mail.outbox), 1)
+        send_email.assert_called_once()
 
 
 class AccountantAuditorAccessTests(TestCase):
