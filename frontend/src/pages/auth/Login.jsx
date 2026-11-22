@@ -134,10 +134,9 @@ export default function Login() {
               <Download size={15} />
             </a>
             <a
-              href="https://github.com/WheezyTech/Electronics-POS/releases"
-              target="_blank"
-              rel="noreferrer"
-              title="Open Android releases"
+              href="/downloads/electronics-pos.apk"
+              download="Electronics POS.apk"
+              title="Download the Android app"
               className="flex items-center justify-center gap-2 rounded-lg border border-green-200 px-3 py-2.5 text-sm font-medium text-green-700 hover:bg-green-50"
             >
               <Smartphone size={17} />
@@ -146,7 +145,7 @@ export default function Login() {
             </a>
           </div>
           <p className="mt-2 text-center text-xs text-slate-400">
-            Download installers from GitHub Releases when they are published.
+            Windows releases are hosted on GitHub. Download the Android app here.
           </p>
         </div>
 

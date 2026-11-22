@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import api from "../../api/axios";
-import { Flame, RefreshCw, Plus, ShoppingCart, Truck, ArrowLeftRight } from "lucide-react";
+import { useAuth } from "../../context/AuthContext";
+import { Flame, RefreshCw, Plus, ShoppingCart, ArrowLeftRight } from "lucide-react";
 
 const list = (data) => Array.isArray(data) ? data : data?.results || [];
 const money = (value) => `KSh ${Number(value || 0).toLocaleString("en-KE", { minimumFractionDigits: 2 })}`;
 
 export default function Gas() {
+  const { user } = useAuth();
+  const canManageGas = user?.is_superuser || ["ADMINISTRATOR", "STORE_MANAGER"].includes(user?.role);
   const [tab, setTab] = useState("overview");
   const [brands, setBrands] = useState([]);
   const [sizes, setSizes] = useState([]);
@@ -19,6 +22,12 @@ export default function Gas() {
   const [brandName, setBrandName] = useState("");
   const [sizeName, setSizeName] = useState("");
   const [sizeKg, setSizeKg] = useState("");
+  const [editingBrand, setEditingBrand] = useState(null);
+  const [editingSize, setEditingSize] = useState(null);
+  const [stockAdjustment, setStockAdjustment] = useState({
+    location: "", brand: "", size: "", full_quantity: "0", empty_quantity: "0",
+    notes: "", reference: "",
+  });
 
   const [refill, setRefill] = useState({ location: "", brand: "", size: "", quantity: "1", refill_price: "", payment_method: "CASH", customer_name: "", customer_phone: "", transaction_reference: "" });
   const [exchange, setExchange] = useState({ location: "", brand: "", size: "", quantity: "1", refill_payment: "", payment_method: "CASH", customer_name: "", customer_phone: "", transaction_reference: "" });
@@ -41,7 +50,9 @@ export default function Gas() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    Promise.resolve().then(load);
+  }, []);
 
   const create = async (path, payload, successMessage) => {
     setError(""); setMessage("");
@@ -56,19 +67,40 @@ export default function Gas() {
   };
 
   const addBrand = (event) => {
-    event.prevent?.();
-    create("/gas/brands/", { name: brandName, is_active: true, compliance_details: "" }, "Gas brand added.");
+    event.preventDefault();
+    const request = editingBrand
+      ? api.patch(`/gas/brands/${editingBrand}/`, { name: brandName })
+      : api.post("/gas/brands/", { name: brandName, is_active: true, compliance_details: "" });
+    request.then(async () => {
+      setMessage(editingBrand ? "Gas brand updated." : "Gas brand added.");
+      setError("");
+      setBrandName("");
+      setEditingBrand(null);
+      await load();
+    }).catch((err) => setError(err?.response?.data?.name?.[0] || err?.response?.data?.detail || "Unable to save gas brand."));
   };
 
   const addSize = (event) => {
-    event.prevent?.();
-    create("/gas/sizes/", { name: sizeName, weight_kg: sizeKg, is_active: true }, "Cylinder size added.");
+    event.preventDefault();
+    const payload = { name: sizeName, weight_kg: sizeKg };
+    const request = editingSize
+      ? api.patch(`/gas/sizes/${editingSize}/`, payload)
+      : api.post("/gas/sizes/", { ...payload, is_active: true });
+    request.then(async () => {
+      setMessage(editingSize ? "Cylinder size updated." : "Cylinder size added.");
+      setError("");
+      setSizeName("");
+      setSizeKg("");
+      setEditingSize(null);
+      await load();
+    }).catch((err) => setError(err?.response?.data?.name?.[0] || err?.response?.data?.detail || "Unable to save cylinder size."));
   };
 
   const tabs = [
     ["overview", "Overview"], ["refill", "Gas refill"], ["exchange", "Empty exchange"],
-    ["sale", "New cylinder sale"], ["purchase", "Gas purchase"], ["setup", "Brands & sizes"],
-  ];
+    ["sale", "New cylinder sale"], ["purchase", "Gas purchase"], ["stock", "Record stock"],
+    ["setup", "Brands & sizes"],
+  ].filter(([id]) => canManageGas || !["purchase", "stock", "setup"].includes(id));
 
   return (
     <div className="space-y-6">
@@ -122,6 +154,9 @@ export default function Gas() {
 
       {tab === "exchange" && (
         <Card title="Empty cylinder exchange">
+          <div className="mb-4 rounded-lg bg-blue-50 p-3 text-sm text-blue-800">
+            Exchange records the customer’s empty cylinder into empty stock and issues one full cylinder from full stock. For example, a 13kg Total exchange changes Full by -1 and Empty by +1. It will be rejected if there is not enough full stock.
+          </div>
           <form onSubmit={(e) => { e.preventDefault(); create("/gas/exchanges/create_exchange/", { ...exchange, quantity: Number(exchange.quantity), refill_payment: exchange.refill_payment }, "Cylinder exchange recorded."); }} className="grid gap-3 md:grid-cols-3">
             <Select value={exchange.location} onChange={(v) => setExchange({...exchange, location: v})} label="Location" options={locations.map(x => [x.id, x.name])}/>
             <Select value={exchange.brand} onChange={(v) => setExchange({...exchange, brand: v})} label="Gas brand" options={brands.map(x => [x.id, x.name])}/>
@@ -159,7 +194,7 @@ export default function Gas() {
 
       {tab === "purchase" && (
         <Card title="Record gas purchase">
-          <form onSubmit={(e) => { e.preventEvent?.(); e.preventDefault(); create("/gas/purchases/create_purchase/", purchase, "Gas purchase recorded."); }} className="grid gap-3 md:grid-cols-3">
+          <form onSubmit={(e) => { e.preventDefault(); create("/gas/purchases/create_purchase/", purchase, "Gas purchase recorded."); }} className="grid gap-3 md:grid-cols-3">
             <Select value={purchase.location} onChange={(v) => setPurchase({...purchase, location: v})} label="Destination" options={locations.map(x => [x.id, x.name])}/>
             <Select value={purchase.supplier} onChange={(v) => setPurchase({...purchase, supplier: v})} label="Supplier" options={suppliers.map(x => [x.id, x.name])}/>
             <Select value={purchase.brand} onChange={(v) => setPurchase({...purchase, brand: v})} label="Gas brand" options={brands.map(x => [x.id, x.name])}/>
@@ -175,10 +210,56 @@ export default function Gas() {
         </Card>
       )}
 
+      {tab === "stock" && (
+        <Card title="Record stock entry or adjustment">
+          <p className="mb-4 text-sm text-slate-600">
+            Use positive numbers to add stock and negative numbers to reduce it. Adjustments are restricted to managers and administrators and are recorded in stock movement history.
+          </p>
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            create("/gas/stock/record/", {
+              ...stockAdjustment,
+              full_quantity: Number(stockAdjustment.full_quantity),
+              empty_quantity: Number(stockAdjustment.empty_quantity),
+            }, "Gas stock recorded.");
+          }} className="grid gap-3 md:grid-cols-3">
+            <Select value={stockAdjustment.location} onChange={(v) => setStockAdjustment({...stockAdjustment, location: v})} label="Location" options={locations.map(x => [x.id, x.name])}/>
+            <Select value={stockAdjustment.brand} onChange={(v) => setStockAdjustment({...stockAdjustment, brand: v})} label="Gas brand" options={brands.map(x => [x.id, x.name])}/>
+            <Select value={stockAdjustment.size} onChange={(v) => setStockAdjustment({...stockAdjustment, size: v})} label="Cylinder size" options={sizes.map(x => [x.id, x.name])}/>
+            <Input label="Full stock change (+/-)" type="number" value={stockAdjustment.full_quantity} onChange={(v) => setStockAdjustment({...stockAdjustment, full_quantity: v})}/>
+            <Input label="Empty stock change (+/-)" type="number" value={stockAdjustment.empty_quantity} onChange={(v) => setStockAdjustment({...stockAdjustment, empty_quantity: v})}/>
+            <Input label="Reference (optional)" value={stockAdjustment.reference} onChange={(v) => setStockAdjustment({...stockAdjustment, reference: v})} required={false}/>
+            <Input label="Reason for adjustment" value={stockAdjustment.notes} onChange={(v) => setStockAdjustment({...stockAdjustment, notes: v})}/>
+            <Submit label="Record stock adjustment"/>
+          </form>
+        </Card>
+      )}
+
       {tab === "setup" && (
         <div className="grid gap-6 lg:grid-cols-2">
-          <Card title="Gas brands"><div className="mb-4 flex gap-2"><input className="flex-1 rounded-lg border p-2" placeholder="Brand name" value={brandName} onChange={(e) => setBrandName(e.target.value)}/><button onClick={addBrand} className="rounded-lg bg-blue-600 px-3 text-white"><Plus size={18}/></button></div><p>{brands.map(x => x.name).join(", ") || "No brands yet"}</p></Card>
-          <Card title="Cylinder sizes"><div className="mb-4 flex gap-2"><input className="w-28 rounded-lg border p-2" placeholder="Name" value={sizeName} onChange={(e) => setSizeName(e.target.value)}/><input className="w-28 rounded-lg border p-2" type="number" placeholder="KG" value={sizeKg} onChange={(e) => setSizeKg(e.target.value)}/><button onClick={addSize} className="rounded-lg bg-blue-600 px-3 text-white"><Plus size={18}/></button></div><p>{sizes.map(x => x.name).join(", ") || "No sizes yet"}</p></Card>
+          <Card title="Gas brands">
+            <form onSubmit={addBrand} className="mb-4 flex gap-2">
+              <input required className="flex-1 rounded-lg border p-2" placeholder="Brand name" value={brandName} onChange={(e) => setBrandName(e.target.value)}/>
+              <button className="rounded-lg bg-blue-600 px-3 text-white"><Plus size={18}/>{editingBrand ? "Save" : ""}</button>
+              {editingBrand && <button type="button" onClick={() => {setEditingBrand(null); setBrandName("");}} className="rounded-lg border px-3">Cancel</button>}
+            </form>
+            <Table headers={["Brand", "Status", "Actions"]}>
+              {brands.map((item) => <tr key={item.id} className="border-t"><td className="py-2">{item.name}</td><td>{item.is_active ? "Active" : "Inactive"}</td><td><button type="button" onClick={() => {setEditingBrand(item.id); setBrandName(item.name);}} className="text-blue-700">Edit</button></td></tr>)}
+              {!brands.length && <tr><td colSpan="3" className="py-3 text-slate-500">No brands yet</td></tr>}
+            </Table>
+          </Card>
+          <Card title="Cylinder sizes">
+            <form onSubmit={addSize} className="mb-4 flex flex-wrap gap-2">
+              <input required className="min-w-28 flex-1 rounded-lg border p-2" placeholder="Size name (e.g. 13kg)" value={sizeName} onChange={(e) => setSizeName(e.target.value)}/>
+              <input required className="w-28 rounded-lg border p-2" type="number" step="0.01" placeholder="Weight KG" value={sizeKg} onChange={(e) => setSizeKg(e.target.value)}/>
+              <button className="rounded-lg bg-blue-600 px-3 text-white"><Plus size={18}/>{editingSize ? "Save" : ""}</button>
+              {editingSize && <button type="button" onClick={() => {setEditingSize(null); setSizeName(""); setSizeKg("");}} className="rounded-lg border px-3">Cancel</button>}
+            </form>
+            <Table headers={["Size", "Weight (kg)", "Status", "Actions"]}>
+              {sizes.map((item) => <tr key={item.id} className="border-t"><td className="py-2">{item.name}</td><td>{item.weight_kg}</td><td>{item.is_active ? "Active" : "Inactive"}</td><td><button type="button" onClick={() => {setEditingSize(item.id); setSizeName(item.name); setSizeKg(item.weight_kg);}} className="text-blue-700">Edit</button></td></tr>)}
+              {!sizes.length && <tr><td colSpan="4" className="py-3 text-slate-500">No sizes yet</td></tr>}
+            </Table>
+          </Card>
         </div>
       )}
     </div>
@@ -187,7 +268,7 @@ export default function Gas() {
 
 function Metric({ title, value, icon: Icon }) { return <div className="rounded-xl border bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><p className="text-sm text-slate-500">{title}</p><Icon size={20} className="text-orange-500"/></div><p className="mt-2 text-2xl font-bold text-slate-800">{value}</p></div>; }
 function Card({ title, children }) { return <div className="rounded-xl border bg-white p-5 shadow-sm"><h2 className="mb-4 font-semibold text-slate-800">{title}</h2>{children}</div>; }
-function Input({ label, value, onChange, type = "text" }) { return <label className="text-sm text-slate-600">{label}<input required type={type} value={value} onChange={(e) => onChange(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5"/></label>; }
+function Input({ label, value, onChange, type = "text", required = true }) { return <label className="text-sm text-slate-600">{label}<input required={required} type={type} value={value} onChange={(e) => onChange(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5"/></label>; }
 function Select({ label, value, onChange, options }) { return <label className="text-sm text-slate-600">{label}<select required value={value} onChange={(e) => onChange(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5"><option value="">Select {label.toLowerCase()}</option>{options.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>; }
 function Submit({ label }) { return <button type="submit" className="md:col-span-3 mt-2 rounded-lg bg-blue-600 px-4 py-3 font-medium text-white">{label}</button>; }
 function Table({ headers, children }) { return <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="text-slate-500">{headers.map(h => <th key={h} className="pb-3">{h}</th>)}</tr></thead><tbody>{children}</tbody></table></div>; }

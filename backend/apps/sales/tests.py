@@ -25,6 +25,45 @@ from .mpesa import MpesaRequestError, initiate_stk_push
 
 class MpesaRequestTests(SimpleTestCase):
     @override_settings(
+        MPESA_SHORTCODE="400200",
+        MPESA_PASSKEY="test-passkey",
+        MPESA_CALLBACK_URL="https://example.com/api/sales/mpesa/callback/",
+        MPESA_TRANSACTION_TYPE="CustomerPayBillOnline",
+    )
+    def test_stk_push_uses_paybill_transaction_details(self):
+        response = Mock()
+        response.json.return_value = {
+            "ResponseCode": "0",
+            "CheckoutRequestID": "checkout-test",
+        }
+        response.ok = True
+        response.status_code = 200
+
+        with (
+            patch(
+                "apps.sales.mpesa.get_mpesa_access_token",
+                return_value="test-access-token",
+            ),
+            patch(
+                "apps.sales.mpesa.requests.post",
+                return_value=response,
+            ) as post,
+        ):
+            result = initiate_stk_push(
+                phone="254712345678",
+                amount=Decimal("10.00"),
+                account_reference="SALE-TEST",
+            )
+
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["BusinessShortCode"], "400200")
+        self.assertEqual(payload["PartyB"], "400200")
+        self.assertEqual(payload["TransactionType"], "CustomerPayBillOnline")
+        self.assertEqual(payload["AccountReference"], "SALE-TEST")
+        self.assertEqual(payload["CallBackURL"], "https://example.com/api/sales/mpesa/callback/")
+        self.assertEqual(result["ResponseCode"], "0")
+
+    @override_settings(
         MPESA_SHORTCODE="123456",
         MPESA_PASSKEY="test-passkey",
         MPESA_CALLBACK_URL="https://example.com/mpesa/callback/",

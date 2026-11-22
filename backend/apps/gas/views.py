@@ -21,7 +21,7 @@ from .serializers import (
     GasRefillSerializer, GasExchangeSerializer, GasPurchaseSerializer,
     NewCylinderSaleSerializer,
 )
-from .permissions import GasAuthorizedPermission
+from .permissions import GasAuthorizedPermission, GasTransactionPermission
 
 
 def reference(prefix):
@@ -96,6 +96,62 @@ class StockViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = GasStockSerializer
     permission_classes = [IsAuthenticated, GasAuthorizedPermission]
 
+    @action(detail=False, methods=["post"])
+    @transaction.atomic
+    def record(self, request):
+        data = request.data
+        try:
+            from apps.inventory.models import StockLocation
+
+            location = StockLocation.objects.get(pk=data["location"])
+            brand = GasBrand.objects.get(pk=data["brand"])
+            size = GasCylinderSize.objects.get(pk=data["size"])
+            full_delta = int(data.get("full_quantity", 0))
+            empty_delta = int(data.get("empty_quantity", 0))
+        except (KeyError, ValueError, TypeError):
+            raise ValidationError(
+                "Location, brand and size are required, with valid stock quantities."
+            )
+        if full_delta == 0 and empty_delta == 0:
+            raise ValidationError("Enter a non-zero full or empty stock adjustment.")
+        note = str(data.get("notes", "")).strip()
+        if not note:
+            raise ValidationError({"notes": "A reason is required for the stock audit trail."})
+
+        tx_reference = str(data.get("reference", "")).strip() or reference("GSA")
+        if full_delta:
+            change_gas_stock(
+                location=location,
+                brand=brand,
+                size=size,
+                cylinder_status="FULL",
+                quantity_delta=full_delta,
+                movement_type=GasStockMovement.MovementType.ADJUSTMENT,
+                performed_by=request.user,
+                reference_value=tx_reference,
+                notes=note,
+            )
+        if empty_delta:
+            change_gas_stock(
+                location=location,
+                brand=brand,
+                size=size,
+                cylinder_status="EMPTY",
+                quantity_delta=empty_delta,
+                movement_type=GasStockMovement.MovementType.ADJUSTMENT,
+                performed_by=request.user,
+                reference_value=tx_reference,
+                notes=note,
+            )
+        stock = GasStock.objects.get(location=location, brand=brand, size=size)
+        return Response(
+            {
+                "reference": tx_reference,
+                "stock": GasStockSerializer(stock).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
 
 class MovementViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = GasStockMovement.objects.select_related("location", "brand", "size", "performed_by")
@@ -125,7 +181,7 @@ class DepositViewSet(viewsets.ModelViewSet):
 class RefillViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = GasRefill.objects.select_related("location", "brand", "size")
     serializer_class = GasRefillSerializer
-    permission_classes = [IsAuthenticated, GasAuthorizedPermission]
+    permission_classes = [IsAuthenticated, GasTransactionPermission]
 
     @action(detail=False, methods=["post"])
     @transaction.atomic
@@ -174,7 +230,7 @@ class RefillViewSet(viewsets.ReadOnlyModelViewSet):
 class ExchangeViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = GasExchange.objects.select_related("location", "brand", "size")
     serializer_class = GasExchangeSerializer
-    permission_classes = [IsAuthenticated, GasAuthorizedPermission]
+    permission_classes = [IsAuthenticated, GasTransactionPermission]
 
     @action(detail=False, methods=["post"])
     @transaction.atomic
@@ -268,7 +324,7 @@ class PurchaseViewSet(viewsets.ReadOnlyModelViewSet):
 class NewCylinderSaleViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = NewCylinderSale.objects.select_related("location", "brand", "size")
     serializer_class = NewCylinderSaleSerializer
-    permission_classes = [IsAuthenticated, GasAuthorizedPermission]
+    permission_classes = [IsAuthenticated, GasTransactionPermission]
 
     @action(detail=False, methods=["post"])
     @transaction.atomic
