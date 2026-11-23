@@ -1,9 +1,21 @@
+from decimal import Decimal
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from apps.inventory.models import StockLocation
-from .models import GasBrand, GasCylinderSize, GasExchange, GasStock, GasStockMovement
+from apps.inventory.models import StockBalance, StockLocation, StockMovement
+from apps.products.models import Category, Product, Unit
+from .models import (
+    GasBrand,
+    GasCylinderSize,
+    GasExchange,
+    GasRefill,
+    GasStock,
+    GasStockMovement,
+    NewCylinderSale,
+    NewCylinderSaleAccessory,
+)
 
 
 class GasExchangeTests(TestCase):
@@ -36,15 +48,16 @@ class GasExchangeTests(TestCase):
                 "location": self.location.pk,
                 "brand": self.brand.pk,
                 "size": self.size.pk,
-                "customer_name": "Customer",
                 "quantity": 1,
                 "refill_payment": "800.00",
-                "payment_method": "CASH",
             },
             format="json",
         )
 
         self.assertEqual(response.status_code, 201)
+        exchange = GasExchange.objects.get()
+        self.assertEqual(exchange.customer_name, "")
+        self.assertEqual(exchange.payment_method, "")
         stock.refresh_from_db()
         self.assertEqual(stock.full_quantity, 1)
         self.assertEqual(stock.empty_quantity, 5)
@@ -94,7 +107,6 @@ class GasExchangeTests(TestCase):
                 "size": self.size.pk,
                 "full_quantity": 3,
                 "empty_quantity": 2,
-                "notes": "Initial stock count",
             },
             format="json",
         )
@@ -106,6 +118,12 @@ class GasExchangeTests(TestCase):
         self.assertEqual(stock.full_quantity, 3)
         self.assertEqual(stock.empty_quantity, 2)
         self.assertEqual(GasStockMovement.objects.count(), 2)
+        self.assertTrue(
+            all(
+                movement.notes == ""
+                for movement in GasStockMovement.objects.all()
+            )
+        )
 
     def test_cashier_can_record_exchange(self):
         self.user.role = "CASHIER"
@@ -153,3 +171,169 @@ class GasExchangeTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertFalse(GasStock.objects.exists())
+
+    def test_refill_can_receive_customer_brand_and_issue_another_brand(self):
+        customer_brand = GasBrand.objects.create(name="Rubis")
+        stock = GasStock.objects.create(
+            location=self.location,
+            brand=self.brand,
+            size=self.size,
+            full_quantity=2,
+            empty_quantity=0,
+        )
+
+        response = self.client.post(
+            "/api/gas/refills/create_refill/",
+            {
+                "location": self.location.pk,
+                "brand": self.brand.pk,
+                "customer_brand": customer_brand.pk,
+                "size": self.size.pk,
+                "quantity": 1,
+                "refill_price": "900.00",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["customer_brand_name"], customer_brand.name)
+        refill = GasRefill.objects.get()
+        self.assertEqual(refill.brand, self.brand)
+        self.assertEqual(refill.customer_brand, customer_brand)
+        self.assertEqual(refill.customer_name, "")
+        self.assertEqual(refill.customer_phone, "")
+        self.assertEqual(refill.payment_method, "")
+        stock.refresh_from_db()
+        self.assertEqual(stock.full_quantity, 1)
+        self.assertEqual(stock.empty_quantity, 0)
+        customer_stock = GasStock.objects.get(
+            location=self.location, brand=customer_brand, size=self.size
+        )
+        self.assertEqual(customer_stock.empty_quantity, 1)
+        self.assertEqual(
+            set(
+                GasStockMovement.objects.values_list(
+                    "brand_id", "cylinder_status", "quantity_delta"
+                )
+            ),
+            {
+                (self.brand.pk, "FULL", -1),
+                (customer_brand.pk, "EMPTY", 1),
+            },
+        )
+
+    def create_accessory(self, *, stock_quantity):
+        category = Category.objects.create(name="Gas and LPG products")
+        unit = Unit.objects.create(name="Piece", abbreviation="pc")
+        product = Product.objects.create(
+            name="Gas regulator",
+            sku="REGULATOR-1",
+            category=category,
+            unit=unit,
+            cost_price=Decimal("500.00"),
+            selling_price=Decimal("750.00"),
+        )
+        balance = StockBalance.objects.create(
+            product=product,
+            location=self.location,
+            quantity_on_hand=stock_quantity,
+        )
+        return product, balance
+
+    def test_complete_cylinder_sale_deducts_registered_accessory_stock(self):
+        gas_stock = GasStock.objects.create(
+            location=self.location,
+            brand=self.brand,
+            size=self.size,
+            full_quantity=2,
+            empty_quantity=0,
+        )
+        accessory, product_balance = self.create_accessory(
+            stock_quantity=Decimal("3.000")
+        )
+
+        response = self.client.post(
+            "/api/gas/sales/create_sale/",
+            {
+                "location": self.location.pk,
+                "brand": self.brand.pk,
+                "size": self.size.pk,
+                "status": "COMPLETE",
+                "quantity": 1,
+                "selling_price": "10000.00",
+                "includes_gas": True,
+                "accessory_items": [
+                    {"product": accessory.pk, "quantity": 1},
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["total_amount"], "10750.00")
+        self.assertEqual(response.data["accessory_items"][0]["product_name"], accessory.name)
+        sale = NewCylinderSale.objects.get()
+        self.assertEqual(sale.status, "COMPLETE")
+        self.assertEqual(sale.customer_name, "")
+        self.assertEqual(sale.customer_phone, "")
+        self.assertEqual(sale.payment_method, "")
+        self.assertEqual(sale.accessories_total, Decimal("750.00"))
+        self.assertEqual(sale.total_amount, Decimal("10750.00"))
+        self.assertEqual(NewCylinderSaleAccessory.objects.count(), 1)
+        gas_stock.refresh_from_db()
+        product_balance.refresh_from_db()
+        self.assertEqual(gas_stock.full_quantity, 1)
+        self.assertEqual(product_balance.quantity_on_hand, Decimal("2.000"))
+        accessory_movement = StockMovement.objects.get()
+        self.assertEqual(accessory_movement.movement_type, "ISSUE")
+        self.assertEqual(accessory_movement.quantity_delta, Decimal("-1"))
+        report_response = self.client.get("/api/gas/reports/")
+        self.assertEqual(report_response.status_code, 200)
+        self.assertEqual(
+            Decimal(report_response.data["daily"]["new_cylinder_sales_amount"]),
+            Decimal("10750.00"),
+        )
+        self.assertEqual(
+            Decimal(report_response.data["daily"]["complete_accessory_sales"]),
+            Decimal("750.00"),
+        )
+
+    def test_complete_sale_rolls_back_if_accessory_stock_is_insufficient(self):
+        gas_stock = GasStock.objects.create(
+            location=self.location,
+            brand=self.brand,
+            size=self.size,
+            full_quantity=1,
+            empty_quantity=0,
+        )
+        accessory, product_balance = self.create_accessory(
+            stock_quantity=Decimal("0.000")
+        )
+
+        response = self.client.post(
+            "/api/gas/sales/create_sale/",
+            {
+                "location": self.location.pk,
+                "brand": self.brand.pk,
+                "size": self.size.pk,
+                "status": "COMPLETE",
+                "quantity": 1,
+                "selling_price": "10000.00",
+                "includes_gas": True,
+                "payment_method": "CASH",
+                "accessory_items": [
+                    {"product": accessory.pk, "quantity": 1},
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(NewCylinderSale.objects.exists())
+        self.assertFalse(NewCylinderSaleAccessory.objects.exists())
+        gas_stock.refresh_from_db()
+        product_balance.refresh_from_db()
+        self.assertEqual(gas_stock.full_quantity, 1)
+        self.assertEqual(product_balance.quantity_on_hand, Decimal("0.000"))
+        self.assertFalse(GasStockMovement.objects.exists())
+        self.assertFalse(StockMovement.objects.exists())

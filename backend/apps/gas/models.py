@@ -7,6 +7,7 @@ from django.db.models import F, Q
 
 from apps.inventory.models import StockLocation
 from apps.purchases.models import Supplier
+from apps.products.models import Product
 
 
 class GasBrand(models.Model):
@@ -147,6 +148,13 @@ class GasRefill(models.Model):
     reference = models.CharField(max_length=50, unique=True)
     location = models.ForeignKey(StockLocation, on_delete=models.PROTECT)
     brand = models.ForeignKey(GasBrand, on_delete=models.PROTECT)
+    customer_brand = models.ForeignKey(
+        GasBrand,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="refills_as_customer_cylinder",
+    )
     size = models.ForeignKey(GasCylinderSize, on_delete=models.PROTECT)
     customer_name = models.CharField(max_length=150, blank=True)
     customer_phone = models.CharField(max_length=30, blank=True)
@@ -154,7 +162,9 @@ class GasRefill(models.Model):
     standard_option = models.CharField(max_length=100, blank=True)
     refill_price = models.DecimalField(max_digits=12, decimal_places=2)
     total_amount = models.DecimalField(max_digits=14, decimal_places=2)
-    payment_method = models.CharField(max_length=20, choices=PaymentMethod.choices)
+    payment_method = models.CharField(
+        max_length=20, choices=PaymentMethod.choices, blank=True, default=""
+    )
     transaction_reference = models.CharField(max_length=100, blank=True)
     recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -172,7 +182,12 @@ class GasExchange(models.Model):
     customer_phone = models.CharField(max_length=30, blank=True)
     quantity = models.PositiveIntegerField(default=1)
     refill_payment = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
-    payment_method = models.CharField(max_length=20, choices=GasRefill.PaymentMethod.choices)
+    payment_method = models.CharField(
+        max_length=20,
+        choices=GasRefill.PaymentMethod.choices,
+        blank=True,
+        default="",
+    )
     transaction_reference = models.CharField(max_length=100, blank=True)
     recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -205,15 +220,53 @@ class NewCylinderSale(models.Model):
     location = models.ForeignKey(StockLocation, on_delete=models.PROTECT)
     brand = models.ForeignKey(GasBrand, on_delete=models.PROTECT)
     size = models.ForeignKey(GasCylinderSize, on_delete=models.PROTECT)
-    status = models.CharField(max_length=10, choices=[("FULL", "Full"), ("EMPTY", "Empty")])
+    status = models.CharField(
+        max_length=10,
+        choices=[("FULL", "Full"), ("EMPTY", "Empty"), ("COMPLETE", "Complete")],
+    )
     quantity = models.PositiveIntegerField(default=1)
     selling_price = models.DecimalField(max_digits=14, decimal_places=2)
+    accessories_total = models.DecimalField(
+        max_digits=14, decimal_places=2, default=Decimal("0.00")
+    )
     deposit_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
     includes_gas = models.BooleanField(default=True)
     customer_name = models.CharField(max_length=150, blank=True)
     customer_phone = models.CharField(max_length=30, blank=True)
     accessories = models.JSONField(default=list, blank=True)
-    payment_method = models.CharField(max_length=20, choices=GasRefill.PaymentMethod.choices)
+    payment_method = models.CharField(
+        max_length=20,
+        choices=GasRefill.PaymentMethod.choices,
+        blank=True,
+        default="",
+    )
     transaction_reference = models.CharField(max_length=100, blank=True)
     recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def total_amount(self):
+        return self.selling_price * self.quantity + self.accessories_total
+
+
+class NewCylinderSaleAccessory(models.Model):
+    sale = models.ForeignKey(
+        NewCylinderSale,
+        on_delete=models.CASCADE,
+        related_name="accessory_items",
+    )
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    quantity = models.PositiveIntegerField()
+    unit_price = models.DecimalField(max_digits=14, decimal_places=2)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["sale", "product"],
+                name="unique_product_per_cylinder_sale",
+            ),
+        ]
+
+    @property
+    def line_total(self):
+        return self.unit_price * self.quantity

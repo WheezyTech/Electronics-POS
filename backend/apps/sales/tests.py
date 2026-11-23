@@ -360,6 +360,48 @@ class SplitPaymentCheckoutTests(APITestCase):
             cost_price=Decimal("5.00"),
         )
 
+    def test_cashier_can_record_a_negotiated_item_price_above_minimum(self):
+        self.product.minimum_selling_price = Decimal("9.00")
+        self.product.save(update_fields=["minimum_selling_price"])
+        item = self.sale.items.get(product=self.product)
+
+        response = self.client.patch(
+            reverse("sales-update-item", args=[self.sale.id, item.id]),
+            {"unit_price": "9.50"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        item.refresh_from_db()
+        self.sale.refresh_from_db()
+        self.assertEqual(item.unit_price, Decimal("9.50"))
+        self.assertEqual(self.sale.subtotal, Decimal("19.00"))
+
+    def test_negotiated_item_price_below_product_minimum_is_rejected(self):
+        self.product.minimum_selling_price = Decimal("9.00")
+        self.product.save(update_fields=["minimum_selling_price"])
+        item = self.sale.items.get(product=self.product)
+
+        response = self.client.patch(
+            reverse("sales-update-item", args=[self.sale.id, item.id]),
+            {"unit_price": "8.99"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        item.refresh_from_db()
+        self.assertEqual(item.unit_price, Decimal("10.00"))
+
+    def test_draft_item_can_still_be_removed(self):
+        item = self.sale.items.get(product=self.product)
+
+        response = self.client.delete(
+            reverse("sales-update-item", args=[self.sale.id, item.id]),
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(self.sale.items.exists())
+
     def test_completes_sale_paid_by_cash_manual_mpesa_and_card(self):
         response = self.client.post(
             reverse("sales-checkout", args=[self.sale.id]),

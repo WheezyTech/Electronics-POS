@@ -222,7 +222,7 @@ class SaleViewSet(viewsets.ModelViewSet):
 
     @action(
         detail=True,
-        methods=["patch"],
+        methods=["patch", "delete"],
         url_path=r"items/(?P<item_id>[^/.]+)"
     )
     def update_item(self, request, pk=None, item_id=None):
@@ -237,6 +237,15 @@ class SaleViewSet(viewsets.ModelViewSet):
             item = sale.items.get(pk=item_id)
         except SaleItem.DoesNotExist:
             raise ValidationError("Sale item not found.")
+
+        if request.method == "DELETE":
+            item.delete()
+            sale.refresh_from_db()
+            sale.recalculate_totals()
+            return Response(
+                {"message": "Sale item removed."},
+                status=status.HTTP_200_OK,
+            )
 
         quantity = request.data.get(
             "quantity", item.quantity
@@ -288,35 +297,10 @@ class SaleViewSet(viewsets.ModelViewSet):
         item.discount_amount = discount
         item.save()
 
+        sale.refresh_from_db()
         sale.recalculate_totals()
 
         return Response(SaleItemSerializer(item).data)
-
-    @action(
-        detail=True,
-        methods=["delete"],
-        url_path=r"items/(?P<item_id>[^/.]+)"
-    )
-    def remove_item(self, request, pk=None, item_id=None):
-        sale = self.get_object()
-
-        if sale.status != Sale.Status.DRAFT:
-            raise ValidationError(
-                "Only draft sales can be modified."
-            )
-
-        try:
-            item = sale.items.get(pk=item_id)
-        except SaleItem.DoesNotExist:
-            raise ValidationError("Sale item not found.")
-
-        item.delete()
-        sale.recalculate_totals()
-
-        return Response(
-            {"message": "Sale item removed."},
-            status=status.HTTP_200_OK
-        )
 
     @action(detail=True, methods=["post"])
     @transaction.atomic

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import api from "../../api/axios";
 import { useAuth } from "../../context/AuthContext";
-import { Flame, RefreshCw, Plus, ShoppingCart, ArrowLeftRight } from "lucide-react";
+import { Flame, RefreshCw, Plus, ShoppingCart, ArrowLeftRight, X } from "lucide-react";
 
 const list = (data) => Array.isArray(data) ? data : data?.results || [];
 const money = (value) => `KSh ${Number(value || 0).toLocaleString("en-KE", { minimumFractionDigits: 2 })}`;
@@ -14,6 +14,7 @@ export default function Gas() {
   const [sizes, setSizes] = useState([]);
   const [locations, setLocations] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  const [products, setProducts] = useState([]);
   const [stock, setStock] = useState([]);
   const [movements, setMovements] = useState([]);
   const [report, setReport] = useState(null);
@@ -25,25 +26,44 @@ export default function Gas() {
   const [editingBrand, setEditingBrand] = useState(null);
   const [editingSize, setEditingSize] = useState(null);
   const [stockAdjustment, setStockAdjustment] = useState({
-    location: "", brand: "", size: "", full_quantity: "0", empty_quantity: "0",
+    location: "", brand: "", size: "", full_direction: "ADD", full_quantity: "0",
+    empty_direction: "ADD", empty_quantity: "0",
     notes: "", reference: "",
   });
 
-  const [refill, setRefill] = useState({ location: "", brand: "", size: "", quantity: "1", refill_price: "", payment_method: "CASH", customer_name: "", customer_phone: "", transaction_reference: "" });
-  const [exchange, setExchange] = useState({ location: "", brand: "", size: "", quantity: "1", refill_payment: "", payment_method: "CASH", customer_name: "", customer_phone: "", transaction_reference: "" });
-  const [sale, setSale] = useState({ location: "", brand: "", size: "", status: "FULL", quantity: "1", selling_price: "", deposit_amount: "", includes_gas: true, payment_method: "CASH", customer_name: "", customer_phone: "", transaction_reference: "", accessories: "" });
+  const [refill, setRefill] = useState({ location: "", brand: "", customer_brand: "", size: "", quantity: "1", refill_price: "", payment_method: "", customer_name: "", customer_phone: "", transaction_reference: "" });
+  const [exchange, setExchange] = useState({ location: "", brand: "", size: "", quantity: "1", refill_payment: "", payment_method: "", customer_name: "", customer_phone: "", transaction_reference: "" });
+  const [sale, setSale] = useState({ location: "", brand: "", size: "", status: "FULL", quantity: "1", selling_price: "", deposit_amount: "", includes_gas: true, payment_method: "", customer_name: "", customer_phone: "", transaction_reference: "", accessories: "" });
+  const [saleAccessories, setSaleAccessories] = useState([{ product: "", quantity: "1" }]);
   const [purchase, setPurchase] = useState({ location: "", supplier: "", brand: "", size: "", full_cylinders_received: "0", empty_cylinders_returned: "0", purchase_price: "", delivery_date: "", invoice_reference: "", compliance_reference: "" });
+
+  const gasAccessoryProducts = products.filter((product) => {
+    const searchable = [
+      product.category_name,
+      product.product_type_name,
+      product.name,
+    ].filter(Boolean).join(" ").toLowerCase();
+    return product.is_active && /gas|lpg|burner|regulat|grill|cook|pipe|clip|connector/.test(searchable);
+  });
+  const accessoryTotal = saleAccessories.reduce((total, item) => {
+    const product = products.find((candidate) => String(candidate.id) === String(item.product));
+    return total + Number(product?.selling_price || 0) * Number(item.quantity || 0);
+  }, 0);
+  const completeSaleTotal =
+    Number(sale.selling_price || 0) * Number(sale.quantity || 0) + accessoryTotal;
 
   const load = async () => {
     setError("");
     try {
-      const [brandsR, sizesR, locationsR, suppliersR, stockR, reportR, movementsR] = await Promise.all([
+      const [brandsR, sizesR, locationsR, suppliersR, productsR, stockR, reportR, movementsR] = await Promise.all([
         api.get("/gas/brands/"), api.get("/gas/sizes/"), api.get("/inventory/locations/"),
-        api.get("/purchases/suppliers/"), api.get("/gas/stock/"), api.get("/gas/reports/"),
+        api.get("/purchases/suppliers/"), api.get("/products/products/"),
+        api.get("/gas/stock/"), api.get("/gas/reports/"),
         api.get("/gas/movements/?ordering=-created_at"),
       ]);
       setBrands(list(brandsR.data)); setSizes(list(sizesR.data)); setLocations(list(locationsR.data));
-      setSuppliers(list(suppliersR.data)); setStock(list(stockR.data)); setReport(reportR.data);
+      setSuppliers(list(suppliersR.data)); setProducts(list(productsR.data));
+      setStock(list(stockR.data)); setReport(reportR.data);
       setMovements(list(movementsR.data));
     } catch {
       setError("Unable to load gas data.");
@@ -137,16 +157,20 @@ export default function Gas() {
 
       {tab === "refill" && (
         <Card title="Record gas refill">
-          <form onSubmit={(e) => { e.preventDefault(); create("/gas/refills/create_refill/", { ...refill, quantity: Number(refill.quantity), refill_price: refill.refill_price }, "Gas refill recorded."); }} className="grid gap-3 md:grid-cols-3">
+          <p className="mb-4 text-sm text-slate-600">
+            Record the empty cylinder brand received and the full cylinder brand supplied. If the brands differ, stock records the empty under the customer’s brand and the full cylinder under the supplied brand.
+          </p>
+          <form onSubmit={(e) => { e.preventDefault(); create("/gas/refills/create_refill/", { ...refill, customer_brand: refill.customer_brand || refill.brand, quantity: Number(refill.quantity), refill_price: refill.refill_price }, "Gas refill recorded."); }} className="grid gap-3 md:grid-cols-3">
             <Select value={refill.location} onChange={(v) => setRefill({...refill, location: v})} label="Location" options={locations.map(x => [x.id, x.name])}/>
-            <Select value={refill.brand} onChange={(v) => setRefill({...refill, brand: v})} label="Gas brand" options={brands.map(x => [x.id, x.name])}/>
+            <Select value={refill.customer_brand} onChange={(v) => setRefill({...refill, customer_brand: v})} label="Customer's empty cylinder brand" options={brands.map(x => [x.id, x.name])}/>
+            <Select value={refill.brand} onChange={(v) => setRefill({...refill, brand: v, customer_brand: refill.customer_brand || v})} label="Full cylinder brand supplied" options={brands.map(x => [x.id, x.name])}/>
             <Select value={refill.size} onChange={(v) => setRefill({...refill, size: v})} label="Cylinder size" options={sizes.map(x => [x.id, x.name])}/>
             <Input label="Quantity" type="number" value={refill.quantity} onChange={(v) => setRefill({...refill, quantity: v})}/>
             <Input label="Refill price" type="number" value={refill.refill_price} onChange={(v) => setRefill({...refill, refill_price: v})}/>
-            <Select value={refill.payment_method} onChange={(v) => setRefill({...refill, payment_method: v})} label="Payment method" options={[["CASH","Cash"],["MPESA","M-Pesa"],["BANK","Bank"],["CARD","Card"],["OTHER","Other"]]}/>
-            <Input label="Customer name" value={refill.customer_name} onChange={(v) => setRefill({...refill, customer_name: v})}/>
-            <Input label="Customer phone" value={refill.customer_phone} onChange={(v) => setRefill({...refill, customer_phone: v})}/>
-            <Input label="Payment reference" value={refill.transaction_reference} onChange={(v) => setRefill({...refill, transaction_reference: v})}/>
+            <Select required={false} value={refill.payment_method} onChange={(v) => setRefill({...refill, payment_method: v})} label="Payment method (optional)" options={[["CASH","Cash"],["MPESA","M-Pesa"],["BANK","Bank"],["CARD","Card"],["OTHER","Other"]]}/>
+            <Input required={false} label="Customer name (optional)" value={refill.customer_name} onChange={(v) => setRefill({...refill, customer_name: v})}/>
+            <Input required={false} label="Customer phone (optional)" value={refill.customer_phone} onChange={(v) => setRefill({...refill, customer_phone: v})}/>
+            <Input required={false} label="Payment reference (optional)" value={refill.transaction_reference} onChange={(v) => setRefill({...refill, transaction_reference: v})}/>
             <Submit label="Record refill"/>
           </form>
         </Card>
@@ -163,10 +187,10 @@ export default function Gas() {
             <Select value={exchange.size} onChange={(v) => setExchange({...exchange, size: v})} label="Cylinder size" options={sizes.map(x => [x.id, x.name])}/>
             <Input label="Quantity" type="number" value={exchange.quantity} onChange={(v) => setExchange({...exchange, quantity: v})}/>
             <Input label="Refill/payment amount" type="number" value={exchange.refill_payment} onChange={(v) => setExchange({...exchange, refill_payment: v})}/>
-            <Select value={exchange.payment_method} onChange={(v) => setExchange({...exchange, payment_method: v})} label="Payment method" options={[["CASH","Cash"],["MPESA","M-Pesa"],["BANK","Bank"],["CARD","Card"],["OTHER","Other"]]}/>
-            <Input label="Customer name" value={exchange.customer_name} onChange={(v) => setExchange({...exchange, customer_name: v})}/>
-            <Input label="Customer phone" value={exchange.customer_phone} onChange={(v) => setExchange({...exchange, customer_phone: v})}/>
-            <Input label="Payment reference" value={exchange.transaction_reference} onChange={(v) => setExchange({...exchange, transaction_reference: v})}/>
+            <Select required={false} value={exchange.payment_method} onChange={(v) => setExchange({...exchange, payment_method: v})} label="Payment method (optional)" options={[["CASH","Cash"],["MPESA","M-Pesa"],["BANK","Bank"],["CARD","Card"],["OTHER","Other"]]}/>
+            <Input required={false} label="Customer name (optional)" value={exchange.customer_name} onChange={(v) => setExchange({...exchange, customer_name: v})}/>
+            <Input required={false} label="Customer phone (optional)" value={exchange.customer_phone} onChange={(v) => setExchange({...exchange, customer_phone: v})}/>
+            <Input required={false} label="Payment reference (optional)" value={exchange.transaction_reference} onChange={(v) => setExchange({...exchange, transaction_reference: v})}/>
             <Submit label="Record exchange"/>
           </form>
         </Card>
@@ -174,20 +198,141 @@ export default function Gas() {
 
       {tab === "sale" && (
         <Card title="Sell a new or complete cylinder">
-          <form onSubmit={(e) => { e.preventDefault(); create("/gas/sales/create_sale/", { ...sale, quantity: Number(sale.quantity), selling_price: sale.selling_price, deposit_amount: sale.deposit_amount || "0", accessories: sale.accessories ? sale.accessories.split(",").map(x => x.trim()) : [] }, "Cylinder sale recorded."); }} className="grid gap-3 md:grid-cols-3">
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            create("/gas/sales/create_sale/", {
+              ...sale,
+              quantity: Number(sale.quantity),
+              selling_price: sale.selling_price,
+              deposit_amount: sale.deposit_amount || "0",
+              accessories: sale.status === "COMPLETE"
+                ? []
+                : sale.accessories.split(",").map((item) => item.trim()).filter(Boolean),
+              accessory_items: sale.status === "COMPLETE"
+                ? saleAccessories.map((item) => ({
+                    product: Number(item.product),
+                    quantity: Number(item.quantity),
+                  }))
+                : [],
+            }, "Cylinder sale recorded.");
+          }} className="grid gap-3 md:grid-cols-3">
             <Select value={sale.location} onChange={(v) => setSale({...sale, location: v})} label="Location" options={locations.map(x => [x.id, x.name])}/>
             <Select value={sale.brand} onChange={(v) => setSale({...sale, brand: v})} label="Cylinder brand" options={brands.map(x => [x.id, x.name])}/>
             <Select value={sale.size} onChange={(v) => setSale({...sale, size: v})} label="Cylinder size" options={sizes.map(x => [x.id, x.name])}/>
-            <Select value={sale.status} onChange={(v) => setSale({...sale, status: v})} label="Cylinder status" options={[["FULL","Full"],["EMPTY","Empty"]]}/>
-            <Input label="Quantity" type="number" value={sale.quantity} onChange={(v) => setSale({...sale, quantity: v})}/>
-            <Input label="Selling price" type="number" value={sale.selling_price} onChange={(v) => setSale({...sale, selling_price: v})}/>
-            <Input label="Deposit" type="number" value={sale.deposit_amount} onChange={(v) => setSale({...sale, deposit_amount: v})}/>
-            <Select value={sale.payment_method} onChange={(v) => setSale({...sale, payment_method: v})} label="Payment method" options={[["CASH","Cash"],["MPESA","M-Pesa"],["BANK","Bank"],["CARD","Card"],["OTHER","Other"]]}/>
-            <Input label="Customer name" value={sale.customer_name} onChange={(v) => setSale({...sale, customer_name: v})}/>
-            <Input label="Customer phone" value={sale.customer_phone} onChange={(v) => setSale({...sale, customer_phone: v})}/>
-            <label className="flex items-center gap-2 rounded-lg border p-3"><input type="checkbox" checked={sale.includes_gas} onChange={(e) => setSale({...sale, includes_gas: e.target.checked})}/>Sale includes gas</label>
-            <Input label="Accessories (comma separated)" value={sale.accessories} onChange={(v) => setSale({...sale, accessories: v})}/>
-            <Submit label="Record cylinder sale"/>
+            <Select
+              value={sale.status}
+              onChange={(v) => setSale({
+                ...sale,
+                status: v,
+                includes_gas: v === "COMPLETE" ? true : sale.includes_gas,
+              })}
+              label="Cylinder status"
+              options={[["FULL","Full"],["EMPTY","Empty"],["COMPLETE","Complete"]]}
+            />
+            <Input label="Quantity" type="number" min="1" step="1" value={sale.quantity} onChange={(v) => setSale({...sale, quantity: v})}/>
+            <Input label={sale.status === "COMPLETE" ? "Cylinder selling price (each)" : "Selling price"} type="number" min="0" step="0.01" value={sale.selling_price} onChange={(v) => setSale({...sale, selling_price: v})}/>
+            <Input required={false} label="Deposit (optional)" type="number" value={sale.deposit_amount} onChange={(v) => setSale({...sale, deposit_amount: v})}/>
+            <Select required={false} value={sale.payment_method} onChange={(v) => setSale({...sale, payment_method: v})} label="Payment method (optional)" options={[["CASH","Cash"],["MPESA","M-Pesa"],["BANK","Bank"],["CARD","Card"],["OTHER","Other"]]}/>
+            <Input required={false} label="Customer name (optional)" value={sale.customer_name} onChange={(v) => setSale({...sale, customer_name: v})}/>
+            <Input required={false} label="Customer phone (optional)" value={sale.customer_phone} onChange={(v) => setSale({...sale, customer_phone: v})}/>
+            <label className="flex items-center gap-2 rounded-lg border p-3">
+              <input
+                type="checkbox"
+                checked={sale.status === "COMPLETE" || sale.includes_gas}
+                disabled={sale.status === "COMPLETE"}
+                onChange={(e) => setSale({...sale, includes_gas: e.target.checked})}
+              />
+              {sale.status === "COMPLETE" ? "Complete package includes gas" : "Sale includes gas"}
+            </label>
+            {sale.status === "COMPLETE" ? (
+              <div className="space-y-3 rounded-lg border p-3 md:col-span-3">
+                <div>
+                  <h3 className="font-medium text-slate-800">Choose registered accessories</h3>
+                  <p className="text-sm text-slate-500">
+                    Select burners, regulators, grills, or other gas products. Their registered selling prices are included in the total and their stock will be reduced.
+                  </p>
+                </div>
+                {!gasAccessoryProducts.length && (
+                  <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+                    No active gas accessories were found. Register them under a Gas/LPG category or type first.
+                  </p>
+                )}
+                {saleAccessories.map((item, index) => {
+                  const usedProductIds = saleAccessories
+                    .filter((_, itemIndex) => itemIndex !== index)
+                    .map((otherItem) => String(otherItem.product));
+                  return (
+                    <div key={index} className="grid items-end gap-2 sm:grid-cols-[1fr_150px_auto]">
+                      <label className="text-sm text-slate-600">
+                        Accessory product
+                        <select
+                          required
+                          value={item.product}
+                          onChange={(event) => setSaleAccessories((current) =>
+                            current.map((entry, itemIndex) => itemIndex === index
+                              ? { ...entry, product: event.target.value }
+                              : entry)
+                          )}
+                          className="mt-1 w-full rounded-lg border p-2.5"
+                        >
+                          <option value="">Select registered product</option>
+                          {gasAccessoryProducts
+                            .filter((product) =>
+                              !usedProductIds.includes(String(product.id)) ||
+                              String(product.id) === String(item.product)
+                            )
+                            .map((product) => (
+                              <option key={product.id} value={product.id}>
+                                {product.name} ({product.sku}) · {money(product.selling_price)}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                      <Input
+                        label="Quantity"
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={item.quantity}
+                        onChange={(value) => setSaleAccessories((current) =>
+                          current.map((entry, itemIndex) => itemIndex === index
+                            ? { ...entry, quantity: value }
+                            : entry)
+                        )}
+                      />
+                      {saleAccessories.length > 1 && (
+                        <button
+                          type="button"
+                          aria-label="Remove accessory"
+                          onClick={() => setSaleAccessories((current) =>
+                            current.filter((_, itemIndex) => itemIndex !== index)
+                          )}
+                          className="rounded-lg border p-2.5 text-slate-500 hover:bg-slate-50"
+                        >
+                          <X size={18}/>
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => setSaleAccessories((current) => [...current, { product: "", quantity: "1" }])}
+                  className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm text-blue-700 hover:bg-blue-50"
+                >
+                  <Plus size={16}/> Add another accessory
+                </button>
+                <div className="rounded-lg bg-slate-50 p-3 text-sm">
+                  <p>Accessories: {money(accessoryTotal)}</p>
+                  <p className="font-semibold text-slate-800">
+                    Cylinder and accessories total: {money(completeSaleTotal)}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <Input label="Accessories (comma separated)" value={sale.accessories} onChange={(v) => setSale({...sale, accessories: v})}/>
+            )}
+            <Submit label={sale.status === "COMPLETE" ? "Record complete cylinder sale" : "Record cylinder sale"}/>
           </form>
         </Card>
       )}
@@ -213,23 +358,37 @@ export default function Gas() {
       {tab === "stock" && (
         <Card title="Record stock entry or adjustment">
           <p className="mb-4 text-sm text-slate-600">
-            Use positive numbers to add stock and negative numbers to reduce it. Adjustments are restricted to managers and administrators and are recorded in stock movement history.
+            Choose whether to add or remove full and empty cylinders. Adjustments are restricted to managers and administrators, cannot reduce stock below zero, and are recorded in stock movement history.
           </p>
           <form onSubmit={(e) => {
             e.preventDefault();
+            const signedQuantity = (quantity, direction) => {
+              const value = Number(quantity);
+              return direction === "REMOVE" ? -value : value;
+            };
             create("/gas/stock/record/", {
-              ...stockAdjustment,
-              full_quantity: Number(stockAdjustment.full_quantity),
-              empty_quantity: Number(stockAdjustment.empty_quantity),
+              location: stockAdjustment.location,
+              brand: stockAdjustment.brand,
+              size: stockAdjustment.size,
+              full_quantity: signedQuantity(stockAdjustment.full_quantity, stockAdjustment.full_direction),
+              empty_quantity: signedQuantity(stockAdjustment.empty_quantity, stockAdjustment.empty_direction),
+              reference: stockAdjustment.reference,
+              notes: stockAdjustment.notes,
             }, "Gas stock recorded.");
           }} className="grid gap-3 md:grid-cols-3">
             <Select value={stockAdjustment.location} onChange={(v) => setStockAdjustment({...stockAdjustment, location: v})} label="Location" options={locations.map(x => [x.id, x.name])}/>
             <Select value={stockAdjustment.brand} onChange={(v) => setStockAdjustment({...stockAdjustment, brand: v})} label="Gas brand" options={brands.map(x => [x.id, x.name])}/>
             <Select value={stockAdjustment.size} onChange={(v) => setStockAdjustment({...stockAdjustment, size: v})} label="Cylinder size" options={sizes.map(x => [x.id, x.name])}/>
-            <Input label="Full stock change (+/-)" type="number" value={stockAdjustment.full_quantity} onChange={(v) => setStockAdjustment({...stockAdjustment, full_quantity: v})}/>
-            <Input label="Empty stock change (+/-)" type="number" value={stockAdjustment.empty_quantity} onChange={(v) => setStockAdjustment({...stockAdjustment, empty_quantity: v})}/>
+            <div className="grid grid-cols-2 gap-2">
+              <Select value={stockAdjustment.full_direction} onChange={(v) => setStockAdjustment({...stockAdjustment, full_direction: v})} label="Full cylinders" options={[["ADD", "Add"], ["REMOVE", "Remove"]]}/>
+              <Input label="Quantity" type="number" min="0" step="1" value={stockAdjustment.full_quantity} onChange={(v) => setStockAdjustment({...stockAdjustment, full_quantity: v})}/>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Select value={stockAdjustment.empty_direction} onChange={(v) => setStockAdjustment({...stockAdjustment, empty_direction: v})} label="Empty cylinders" options={[["ADD", "Add"], ["REMOVE", "Remove"]]}/>
+              <Input label="Quantity" type="number" min="0" step="1" value={stockAdjustment.empty_quantity} onChange={(v) => setStockAdjustment({...stockAdjustment, empty_quantity: v})}/>
+            </div>
             <Input label="Reference (optional)" value={stockAdjustment.reference} onChange={(v) => setStockAdjustment({...stockAdjustment, reference: v})} required={false}/>
-            <Input label="Reason for adjustment" value={stockAdjustment.notes} onChange={(v) => setStockAdjustment({...stockAdjustment, notes: v})}/>
+            <Input required={false} label="Reason for adjustment (optional)" value={stockAdjustment.notes} onChange={(v) => setStockAdjustment({...stockAdjustment, notes: v})}/>
             <Submit label="Record stock adjustment"/>
           </form>
         </Card>
@@ -268,7 +427,7 @@ export default function Gas() {
 
 function Metric({ title, value, icon: Icon }) { return <div className="rounded-xl border bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><p className="text-sm text-slate-500">{title}</p><Icon size={20} className="text-orange-500"/></div><p className="mt-2 text-2xl font-bold text-slate-800">{value}</p></div>; }
 function Card({ title, children }) { return <div className="rounded-xl border bg-white p-5 shadow-sm"><h2 className="mb-4 font-semibold text-slate-800">{title}</h2>{children}</div>; }
-function Input({ label, value, onChange, type = "text", required = true }) { return <label className="text-sm text-slate-600">{label}<input required={required} type={type} value={value} onChange={(e) => onChange(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5"/></label>; }
-function Select({ label, value, onChange, options }) { return <label className="text-sm text-slate-600">{label}<select required value={value} onChange={(e) => onChange(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5"><option value="">Select {label.toLowerCase()}</option>{options.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>; }
+function Input({ label, value, onChange, type = "text", required = true, min, step }) { return <label className="text-sm text-slate-600">{label}<input required={required} type={type} min={min} step={step} value={value} onChange={(e) => onChange(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5"/></label>; }
+function Select({ label, value, onChange, options, required = true }) { return <label className="text-sm text-slate-600">{label}<select required={required} value={value} onChange={(e) => onChange(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5"><option value="">Select {label.toLowerCase()}</option>{options.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>; }
 function Submit({ label }) { return <button type="submit" className="md:col-span-3 mt-2 rounded-lg bg-blue-600 px-4 py-3 font-medium text-white">{label}</button>; }
 function Table({ headers, children }) { return <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="text-slate-500">{headers.map(h => <th key={h} className="pb-3">{h}</th>)}</tr></thead><tbody>{children}</tbody></table></div>; }

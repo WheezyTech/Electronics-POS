@@ -3,6 +3,7 @@ from rest_framework import serializers
 from .models import (
     GasBrand, GasCylinderSize, GasCylinder, GasStock, GasStockMovement,
     GasRefill, GasExchange, GasPurchase, CylinderDeposit, NewCylinderSale,
+    NewCylinderSaleAccessory,
 )
 
 
@@ -60,6 +61,9 @@ class CylinderDepositSerializer(serializers.ModelSerializer):
 
 class GasRefillSerializer(serializers.ModelSerializer):
     brand_name = serializers.CharField(source="brand.name", read_only=True)
+    customer_brand_name = serializers.CharField(
+        source="customer_brand.name", read_only=True, allow_null=True
+    )
     size_name = serializers.CharField(source="size.name", read_only=True)
 
     class Meta:
@@ -89,9 +93,26 @@ class GasPurchaseSerializer(serializers.ModelSerializer):
         read_only_fields = ["reference", "recorded_by", "created_at"]
 
 
+class NewCylinderSaleAccessorySerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source="product.name", read_only=True)
+    line_total = serializers.DecimalField(
+        max_digits=14, decimal_places=2, read_only=True
+    )
+
+    class Meta:
+        model = NewCylinderSaleAccessory
+        fields = [
+            "id", "product", "product_name", "quantity", "unit_price", "line_total"
+        ]
+
+
 class NewCylinderSaleSerializer(serializers.ModelSerializer):
     brand_name = serializers.CharField(source="brand.name", read_only=True)
     size_name = serializers.CharField(source="size.name", read_only=True)
+    accessory_items = NewCylinderSaleAccessorySerializer(many=True, read_only=True)
+    total_amount = serializers.DecimalField(
+        max_digits=14, decimal_places=2, read_only=True
+    )
 
     class Meta:
         model = NewCylinderSale

@@ -2,7 +2,7 @@ import uuid
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import F, Sum
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -14,6 +14,7 @@ from rest_framework.views import APIView
 from .models import (
     GasBrand, GasCylinderSize, GasCylinder, GasStock, GasStockMovement,
     GasRefill, GasExchange, GasPurchase, CylinderDeposit, NewCylinderSale,
+    NewCylinderSaleAccessory,
 )
 from .serializers import (
     GasBrandSerializer, GasCylinderSizeSerializer, GasCylinderSerializer,
@@ -22,6 +23,9 @@ from .serializers import (
     NewCylinderSaleSerializer,
 )
 from .permissions import GasAuthorizedPermission, GasTransactionPermission
+from apps.inventory.models import StockMovement
+from apps.inventory.services import change_stock
+from apps.products.models import Product
 
 
 def reference(prefix):
@@ -115,8 +119,6 @@ class StockViewSet(viewsets.ReadOnlyModelViewSet):
         if full_delta == 0 and empty_delta == 0:
             raise ValidationError("Enter a non-zero full or empty stock adjustment.")
         note = str(data.get("notes", "")).strip()
-        if not note:
-            raise ValidationError({"notes": "A reason is required for the stock audit trail."})
 
         tx_reference = str(data.get("reference", "")).strip() or reference("GSA")
         if full_delta:
@@ -179,7 +181,9 @@ class DepositViewSet(viewsets.ModelViewSet):
 
 
 class RefillViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = GasRefill.objects.select_related("location", "brand", "size")
+    queryset = GasRefill.objects.select_related(
+        "location", "brand", "customer_brand", "size"
+    )
     serializer_class = GasRefillSerializer
     permission_classes = [IsAuthenticated, GasTransactionPermission]
 
@@ -200,6 +204,9 @@ class RefillViewSet(viewsets.ReadOnlyModelViewSet):
         from apps.inventory.models import StockLocation
         location = StockLocation.objects.get(pk=location_id)
         brand = GasBrand.objects.get(pk=brand_id)
+        customer_brand = GasBrand.objects.get(
+            pk=data.get("customer_brand", brand_id)
+        )
         size = GasCylinderSize.objects.get(pk=size_id)
         total = refill_price * quantity
         tx_reference = reference("REF")
@@ -207,6 +214,7 @@ class RefillViewSet(viewsets.ReadOnlyModelViewSet):
             reference=tx_reference,
             location=location,
             brand=brand,
+            customer_brand=customer_brand,
             size=size,
             customer_name=data.get("customer_name", ""),
             customer_phone=data.get("customer_phone", ""),
@@ -214,14 +222,14 @@ class RefillViewSet(viewsets.ReadOnlyModelViewSet):
             standard_option=data.get("standard_option", ""),
             refill_price=refill_price,
             total_amount=total,
-            payment_method=data["payment_method"],
+            payment_method=data.get("payment_method", ""),
             transaction_reference=data.get("transaction_reference", ""),
             recorded_by=request.user,
         )
         change_gas_stock(location=location, brand=brand, size=size, cylinder_status="FULL",
                          quantity_delta=-quantity, movement_type=GasStockMovement.MovementType.REFILL_ISSUE,
                          performed_by=request.user, reference_value=tx_reference)
-        change_gas_stock(location=location, brand=brand, size=size, cylinder_status="EMPTY",
+        change_gas_stock(location=location, brand=customer_brand, size=size, cylinder_status="EMPTY",
                          quantity_delta=quantity, movement_type=GasStockMovement.MovementType.REFILL_RETURN,
                          performed_by=request.user, reference_value=tx_reference)
         return Response(GasRefillSerializer(refill).data, status=status.HTTP_201_CREATED)
@@ -253,11 +261,11 @@ class ExchangeViewSet(viewsets.ReadOnlyModelViewSet):
             location=location,
             brand=brand,
             size=size,
-            customer_name=data["customer_name"],
+            customer_name=data.get("customer_name", ""),
             customer_phone=data.get("customer_phone", ""),
             quantity=quantity,
             refill_payment=refill_payment,
-            payment_method=data["payment_method"],
+            payment_method=data.get("payment_method", ""),
             transaction_reference=data.get("transaction_reference", ""),
             recorded_by=request.user,
         )
@@ -322,7 +330,9 @@ class PurchaseViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class NewCylinderSaleViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = NewCylinderSale.objects.select_related("location", "brand", "size")
+    queryset = NewCylinderSale.objects.select_related(
+        "location", "brand", "size"
+    ).prefetch_related("accessory_items__product")
     serializer_class = NewCylinderSaleSerializer
     permission_classes = [IsAuthenticated, GasTransactionPermission]
 
@@ -343,8 +353,57 @@ class NewCylinderSaleViewSet(viewsets.ReadOnlyModelViewSet):
             raise ValidationError("Location, brand, size, status and selling price are required.")
         if quantity < 1 or selling_price < 0 or deposit_amount < 0:
             raise ValidationError("Quantity, selling price and deposit must be valid.")
-        if status_value not in ("FULL", "EMPTY"):
-            raise ValidationError("Cylinder status must be FULL or EMPTY.")
+        if status_value not in ("FULL", "EMPTY", "COMPLETE"):
+            raise ValidationError("Cylinder status must be FULL, EMPTY or COMPLETE.")
+
+        accessory_data = data.get("accessory_items", [])
+        if not isinstance(accessory_data, list):
+            raise ValidationError({"accessory_items": "Accessories must be a list."})
+        if status_value == "COMPLETE" and not accessory_data:
+            raise ValidationError(
+                {"accessory_items": "Select at least one registered accessory for a complete sale."}
+            )
+        if status_value != "COMPLETE" and accessory_data:
+            raise ValidationError(
+                {"accessory_items": "Registered accessories can only be included in a complete sale."}
+            )
+
+        accessories = []
+        product_ids = []
+        for item in accessory_data:
+            try:
+                product_id = int(item["product"])
+                accessory_quantity = int(item["quantity"])
+            except (KeyError, TypeError, ValueError):
+                raise ValidationError(
+                    {"accessory_items": "Each accessory needs a product and valid quantity."}
+                )
+            if accessory_quantity < 1 or product_id in product_ids:
+                raise ValidationError(
+                    {"accessory_items": "Accessory quantities must be positive and each product can only be selected once."}
+                )
+            product_ids.append(product_id)
+            accessories.append((product_id, accessory_quantity))
+
+        accessory_products = {
+            product.pk: product
+            for product in Product.objects.filter(pk__in=product_ids, is_active=True)
+        }
+        if len(accessory_products) != len(product_ids):
+            raise ValidationError(
+                {"accessory_items": "One or more selected products are unavailable."}
+            )
+
+        if status_value == "COMPLETE" and not data.get("includes_gas", True):
+            raise ValidationError("A complete cylinder sale must include gas.")
+
+        accessories_total = sum(
+            (
+                accessory_products[product_id].selling_price * accessory_quantity
+                for product_id, accessory_quantity in accessories
+            ),
+            Decimal("0.00"),
+        )
         tx_reference = reference("GCS")
         sale = NewCylinderSale.objects.create(
             reference=tx_reference,
@@ -354,18 +413,47 @@ class NewCylinderSaleViewSet(viewsets.ReadOnlyModelViewSet):
             status=status_value,
             quantity=quantity,
             selling_price=selling_price,
+            accessories_total=accessories_total,
             deposit_amount=deposit_amount,
-            includes_gas=data.get("includes_gas", True),
+            includes_gas=(
+                True if status_value == "COMPLETE" else data.get("includes_gas", True)
+            ),
             customer_name=data.get("customer_name", ""),
             customer_phone=data.get("customer_phone", ""),
             accessories=data.get("accessories", []),
-            payment_method=data["payment_method"],
+            payment_method=data.get("payment_method", ""),
             transaction_reference=data.get("transaction_reference", ""),
             recorded_by=request.user,
         )
-        movement_type = (GasStockMovement.MovementType.NEW_CYLINDER_SALE
-                         if status_value == "FULL" else GasStockMovement.MovementType.EMPTY_CYLINDER_SALE)
-        change_gas_stock(location=location, brand=brand, size=size, cylinder_status=status_value,
+        for product_id, accessory_quantity in accessories:
+            product = accessory_products[product_id]
+            NewCylinderSaleAccessory.objects.create(
+                sale=sale,
+                product=product,
+                quantity=accessory_quantity,
+                unit_price=product.selling_price,
+            )
+            try:
+                change_stock(
+                    product=product,
+                    location=location,
+                    quantity_delta=-accessory_quantity,
+                    movement_type=StockMovement.MovementType.ISSUE,
+                    user=request.user,
+                    reference=tx_reference,
+                    notes="Included in complete cylinder sale.",
+                    unit_cost=product.cost_price,
+                )
+            except ValueError as exc:
+                raise ValidationError(str(exc))
+
+        cylinder_status = "FULL" if status_value == "COMPLETE" else status_value
+        movement_type = (
+            GasStockMovement.MovementType.EMPTY_CYLINDER_SALE
+            if cylinder_status == "EMPTY"
+            else GasStockMovement.MovementType.NEW_CYLINDER_SALE
+        )
+        change_gas_stock(location=location, brand=brand, size=size, cylinder_status=cylinder_status,
                          quantity_delta=-quantity, movement_type=movement_type,
                          performed_by=request.user, reference_value=tx_reference)
         if deposit_amount > 0:
@@ -406,7 +494,13 @@ class GasReportAPIView(APIView):
 
         refill_sales = refills.aggregate(total=Sum("total_amount"))["total"] or Decimal("0.00")
         exchange_sales = exchanges.aggregate(total=Sum("refill_payment"))["total"] or Decimal("0.00")
-        cylinder_sales = sales.aggregate(total=Sum("selling_price"))["total"] or Decimal("0.00")
+        cylinder_sales = sales.aggregate(
+            total=Sum(F("selling_price") * F("quantity"))
+        )["total"] or Decimal("0.00")
+        accessory_sales = sales.aggregate(
+            total=Sum("accessories_total")
+        )["total"] or Decimal("0.00")
+        cylinder_sales_total = cylinder_sales + accessory_sales
         purchase_cost = purchases.aggregate(total=Sum("purchase_price"))["total"] or Decimal("0.00")
 
         return Response({
@@ -416,7 +510,8 @@ class GasReportAPIView(APIView):
                 "exchanges": exchanges.count(),
                 "exchange_sales": exchange_sales,
                 "new_cylinder_sales": sales.count(),
-                "new_cylinder_sales_amount": cylinder_sales,
+                "new_cylinder_sales_amount": cylinder_sales_total,
+                "complete_accessory_sales": accessory_sales,
                 "purchases": purchases.count(),
                 "purchase_cost": purchase_cost,
                 "gas_profit": refill_sales + exchange_sales + cylinder_sales - purchase_cost,

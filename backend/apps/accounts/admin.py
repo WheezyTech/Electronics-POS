@@ -74,15 +74,19 @@ class CustomUserAdmin(UserAdmin):
         'first_name',
         'last_name',
         'role',
+        'email_verified',
         'is_active',
         'is_staff',
     )
 
     list_filter = (
         'role',
+        'email_verified',
         'is_active',
         'is_staff',
     )
+
+    readonly_fields = UserAdmin.readonly_fields + ('email_verified',)
 
     fieldsets = UserAdmin.fieldsets + (
         ('POS Account Information', {
@@ -90,6 +94,9 @@ class CustomUserAdmin(UserAdmin):
                 'role',
                 'phone_number',
             ),
+        }),
+        ('Email Verification', {
+            'fields': ('email_verified',),
         }),
     )
 

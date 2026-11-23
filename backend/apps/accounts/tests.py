@@ -4,7 +4,6 @@ from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.core import mail
 from django.contrib.auth.tokens import default_token_generator
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -19,6 +18,39 @@ from .models import Device, OfflineAuthorization
 from .email_tokens import email_verification_token
 
 User = get_user_model()
+
+
+@override_settings(STORAGES={
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+})
+class EmailVerificationAdminTests(TestCase):
+    def test_selected_user_displays_email_verification_status(self):
+        admin_user = User.objects.create_superuser(
+            username="admin",
+            email="admin@example.com",
+            password="SecureAdminPassword123!",
+        )
+        selected_user = User.objects.create_user(
+            username="verified-user",
+            email="verified@example.com",
+            password="SecureUserPassword123!",
+            email_verified=True,
+        )
+        self.client.force_login(admin_user)
+
+        response = self.client.get(
+            reverse("admin:accounts_user_change", args=[selected_user.pk])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Email Verification")
+        self.assertIn(
+            "email_verified",
+            response.context["adminform"].readonly_fields,
+        )
 
 
 class CustomTokenObtainPairSerializerTests(TestCase):
@@ -278,23 +310,25 @@ class AccountEmailTests(TestCase):
             role=User.Role.CASHIER,
         )
 
-    def test_existing_users_can_request_a_verification_link(self):
+    @patch("apps.accounts.email_tokens._send_resend_email")
+    def test_existing_users_can_request_a_verification_link(self, send_email):
         response = self.client.post(
             reverse("email-verification-request"),
             {"email": self.user.email},
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertIn("verify-email", mail.outbox[0].body)
+        self.assertEqual(send_email.call_count, 1)
+        self.assertIn("verify-email", send_email.call_args.args[1])
 
-    def test_password_reset_is_sent_only_to_verified_email(self):
+    @patch("apps.accounts.email_tokens._send_resend_email")
+    def test_password_reset_is_sent_only_to_verified_email(self, send_email):
         response = self.client.post(
             reverse("password-reset"),
             {"email": self.user.email},
         )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(mail.outbox), 0)
+        send_email.assert_not_called()
 
         self.user.email_verified = True
         self.user.save(update_fields=["email_verified"])
@@ -304,9 +338,9 @@ class AccountEmailTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(send_email.call_count, 1)
         link = next(
-            line for line in mail.outbox[0].body.splitlines()
+            line for line in send_email.call_args.args[1].splitlines()
             if line.startswith("https://")
         )
         query = parse_qs(urlparse(link).query)

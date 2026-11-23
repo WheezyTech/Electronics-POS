@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import api from "../../api/axios";
 import {
@@ -74,6 +74,7 @@ export default function POS() {
       ? initialCart.map((item) => ({
           ...item,
           price: Number(item.price || 0),
+          listPrice: Number(item.listPrice ?? item.price ?? 0),
           quantity: Number(item.quantity || 0),
         }))
       : []
@@ -111,6 +112,7 @@ export default function POS() {
   const [draftSale, setDraftSale] = useState(null);
   const [loadedDraftId, setLoadedDraftId] = useState(null);
   const [failedDraftId, setFailedDraftId] = useState(null);
+  const saleAudioContext = useRef(null);
 
   const draftSaleId = routeLocation.state?.draftSaleId;
   const isLoadingDraft = Boolean(
@@ -261,6 +263,7 @@ export default function POS() {
           name: item.product_name,
           sku: item.sku,
           price: Number(item.unit_price || 0),
+          listPrice: Number(item.unit_price || 0),
           discountAmount: Number(item.discount_amount || 0),
           quantity: Number(item.quantity || 0),
         })));
@@ -413,6 +416,7 @@ export default function POS() {
           name: product.name,
           sku: product.sku,
           price: Number(product.selling_price || 0),
+          listPrice: Number(product.selling_price || 0),
           quantity: 1
         }
       ];
@@ -481,7 +485,7 @@ export default function POS() {
       cart.reduce(
         (sum, item) =>
           sum +
-          item.price * item.quantity -
+          Number(item.price || 0) * item.quantity -
           Number(item.discountAmount || 0),
         0
       ) -
@@ -494,7 +498,54 @@ export default function POS() {
   const [pendingMpesaSaleId, setPendingMpesaSaleId] = useState("");
   const [mpesaStatus, setMpesaStatus] = useState("");
 
+  const prepareSaleSound = () => {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+
+    try {
+      if (!saleAudioContext.current) {
+        saleAudioContext.current = new AudioContextClass();
+      }
+      if (saleAudioContext.current.state === "suspended") {
+        saleAudioContext.current.resume().catch((audioError) => {
+          console.warn("Sale confirmation sound could not be enabled.", audioError);
+        });
+      }
+    } catch (audioError) {
+      console.warn("Sale confirmation sound could not be enabled.", audioError);
+    }
+  };
+
+  const playSaleSuccessSound = async () => {
+    const context = saleAudioContext.current;
+    if (!context) return;
+
+    try {
+      if (context.state === "suspended") await context.resume();
+      const startAt = context.currentTime;
+      [880, 1174].forEach((frequency, index) => {
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        const noteStart = startAt + index * 0.13;
+        oscillator.type = "sine";
+        oscillator.frequency.value = frequency;
+        gain.gain.setValueAtTime(0.0001, noteStart);
+        gain.gain.exponentialRampToValueAtTime(0.18, noteStart + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, noteStart + 0.12);
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+        oscillator.start(noteStart);
+        oscillator.stop(noteStart + 0.13);
+      });
+    } catch (audioError) {
+      console.warn("Sale confirmation sound could not be played.", audioError);
+    }
+  };
+
   const buildReceipt = (sale) => {
+    if (sale.sync_status !== "PENDING") {
+      playSaleSuccessSound();
+    }
     setReceiptSale(sale);
     setMessage(
       sale.sync_status === "PENDING"
@@ -743,8 +794,17 @@ export default function POS() {
       return;
     }
 
-    if (total <= 0) {
+    if (!Number.isFinite(total) || total <= 0) {
       setError("Sale total must be greater than zero.");
+      return;
+    }
+
+    if (
+      cart.some((item) =>
+        !Number.isFinite(Number(item.price)) || Number(item.price) <= 0
+      )
+    ) {
+      setError("Enter a valid agreed unit price greater than zero for every item.");
       return;
     }
 
@@ -797,6 +857,7 @@ export default function POS() {
       return;
     }
 
+    prepareSaleSound();
     setLoading(true);
     setError("");
     setMessage("");
@@ -1156,7 +1217,8 @@ export default function POS() {
                   <div>
                     <p className="font-medium text-slate-800">{item.name}</p>
                     <p className="text-sm text-slate-500">
-                      KSh {item.price.toLocaleString()} each
+                      List price: KSh{" "}
+                      {Number(item.listPrice ?? item.price).toLocaleString()}
                     </p>
                   </div>
                   {!draftSale && (
@@ -1170,6 +1232,28 @@ export default function POS() {
                     </button>
                   )}
                 </div>
+
+                <label className="mt-2 block text-sm font-medium text-slate-700">
+                  Agreed unit price (KSh)
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0.01"
+                    step="0.01"
+                    value={item.price}
+                    onChange={(event) =>
+                      setCart((current) =>
+                        current.map((cartItem) =>
+                          cartItem.id === item.id
+                            ? { ...cartItem, price: event.target.value }
+                            : cartItem
+                        )
+                      )
+                    }
+                    disabled={loading || isLoadingDraft}
+                    className="mt-1 w-full rounded-lg border border-slate-300 p-2"
+                  />
+                </label>
 
                 <div className="mt-2 flex items-center justify-between">
                   <div className="flex items-center gap-3">

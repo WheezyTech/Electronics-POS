@@ -24,6 +24,7 @@ export default function Inventory() {
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [action, setAction] = useState("receive");
+  const [openingProductSearch, setOpeningProductSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [editingMovement, setEditingMovement] = useState(null);
   const [movementForm, setMovementForm] = useState({
@@ -111,6 +112,17 @@ export default function Inventory() {
     return name.includes(term) || location.includes(term);
   });
 
+  const filteredOpeningProducts = products.filter((product) => {
+    const term = openingProductSearch.trim().toLowerCase();
+    return (
+      product.name?.toLowerCase().includes(term) ||
+      product.sku?.toLowerCase().includes(term) ||
+      product.model_number?.toLowerCase().includes(term) ||
+      product.brand?.name?.toLowerCase().includes(term) ||
+      product.brand_name?.toLowerCase().includes(term)
+    );
+  });
+
   const totalUnits = balances.reduce(
     (sum, item) =>
       sum + Number(
@@ -124,6 +136,7 @@ export default function Inventory() {
 
   const openAction = (type) => {
     setAction(type);
+    setOpeningProductSearch("");
     setForm({
       product: "",
       location: locations.length === 1 ? String(locations[0].id) : "",
@@ -137,6 +150,7 @@ export default function Inventory() {
 
   const openAdjustment = (balance, direction) => {
     setAction(direction > 0 ? "adjust-increase" : "adjust-decrease");
+    setOpeningProductSearch("");
     setForm({
       product: String(balance.product?.id ?? balance.product),
       location: String(balance.location?.id ?? balance.location),
@@ -150,6 +164,11 @@ export default function Inventory() {
 
   const submitAction = async (e) => {
     e.preventDefault();
+
+    if (action === "opening" && !form.product) {
+      setError("Search for a product and select it from the results.");
+      return;
+    }
 
     try {
       setSaving(true);
@@ -715,24 +734,112 @@ export default function Inventory() {
                 </div>
               )}
 
-              <label className="block">
-                <span className="mb-1 block text-sm font-medium">Product</span>
-                <select
-                  required
-                  value={form.product}
-                  onChange={(e) =>
-                    setForm({ ...form, product: e.target.value })
-                  }
-                  className="w-full rounded-lg border p-2.5 text-sm"
-                >
-                  <option value="">Select product</option>
-                  {products.map((product) => (
-                    <option key={product.id} value={product.id}>
-                      {product.name} ({product.sku})
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {action === "opening" ? (
+                <div>
+                  <label
+                    htmlFor="opening-stock-product-search"
+                    className="mb-1 block text-sm font-medium"
+                  >
+                    Search product
+                  </label>
+                  <div className="relative">
+                    <Search
+                      size={17}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    />
+                    <input
+                      id="opening-stock-product-search"
+                      role="combobox"
+                      aria-autocomplete="list"
+                      aria-expanded={
+                        !form.product && Boolean(openingProductSearch.trim())
+                      }
+                      value={openingProductSearch}
+                      onChange={(event) => {
+                        setOpeningProductSearch(event.target.value);
+                        setForm({ ...form, product: "" });
+                      }}
+                      className="w-full rounded-lg border py-2.5 pl-10 pr-10 text-sm outline-none focus:border-blue-500"
+                      placeholder="Search product name, SKU, model or brand..."
+                    />
+                    {form.product && (
+                      <button
+                        type="button"
+                        aria-label="Clear selected product"
+                        onClick={() => {
+                          setOpeningProductSearch("");
+                          setForm({ ...form, product: "" });
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-500 hover:bg-gray-100"
+                      >
+                        <X size={16} />
+                      </button>
+                    )}
+                  </div>
+                  {!form.product && openingProductSearch.trim() && (
+                    <div
+                      role="listbox"
+                      aria-label="Matching products"
+                      className="mt-1 max-h-52 overflow-y-auto rounded-lg border bg-white shadow-sm"
+                    >
+                      {filteredOpeningProducts.length ? (
+                        filteredOpeningProducts.slice(0, 20).map((product) => (
+                          <button
+                            key={product.id}
+                            type="button"
+                            role="option"
+                            aria-selected="false"
+                            onClick={() => {
+                              setForm({ ...form, product: String(product.id) });
+                              setOpeningProductSearch(
+                                `${product.name}${product.sku ? ` (${product.sku})` : ""}`
+                              );
+                            }}
+                            className="block w-full border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-blue-50"
+                          >
+                            <span className="font-medium">{product.name}</span>
+                            {(product.sku || product.brand?.name || product.brand_name) && (
+                              <span className="ml-2 text-xs text-gray-500">
+                                {[product.sku, product.brand?.name || product.brand_name]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </span>
+                            )}
+                          </button>
+                        ))
+                      ) : (
+                        <p className="px-3 py-2 text-sm text-gray-500">
+                          No products match your search.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {form.product && (
+                    <p className="mt-1 text-xs text-green-700">
+                      Product selected. Clear the field to choose another.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium">Product</span>
+                  <select
+                    required
+                    value={form.product}
+                    onChange={(e) =>
+                      setForm({ ...form, product: e.target.value })
+                    }
+                    className="w-full rounded-lg border p-2.5 text-sm"
+                  >
+                    <option value="">Select product</option>
+                    {products.map((product) => (
+                      <option key={product.id} value={product.id}>
+                        {product.name} ({product.sku})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
 
               <label className="block">
                 <span className="mb-1 block text-sm font-medium">
