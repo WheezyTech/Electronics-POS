@@ -65,6 +65,8 @@ class GasRefillSerializer(serializers.ModelSerializer):
         source="customer_brand.name", read_only=True, allow_null=True
     )
     size_name = serializers.CharField(source="size.name", read_only=True)
+    location_name = serializers.CharField(source="location.name", read_only=True)
+    recorded_by_name = serializers.CharField(source="recorded_by.username", read_only=True)
 
     class Meta:
         model = GasRefill
@@ -75,6 +77,8 @@ class GasRefillSerializer(serializers.ModelSerializer):
 class GasExchangeSerializer(serializers.ModelSerializer):
     brand_name = serializers.CharField(source="brand.name", read_only=True)
     size_name = serializers.CharField(source="size.name", read_only=True)
+    location_name = serializers.CharField(source="location.name", read_only=True)
+    recorded_by_name = serializers.CharField(source="recorded_by.username", read_only=True)
 
     class Meta:
         model = GasExchange
@@ -109,6 +113,8 @@ class NewCylinderSaleAccessorySerializer(serializers.ModelSerializer):
 class NewCylinderSaleSerializer(serializers.ModelSerializer):
     brand_name = serializers.CharField(source="brand.name", read_only=True)
     size_name = serializers.CharField(source="size.name", read_only=True)
+    location_name = serializers.CharField(source="location.name", read_only=True)
+    recorded_by_name = serializers.CharField(source="recorded_by.username", read_only=True)
     accessory_items = NewCylinderSaleAccessorySerializer(many=True, read_only=True)
     total_amount = serializers.DecimalField(
         max_digits=14, decimal_places=2, read_only=True

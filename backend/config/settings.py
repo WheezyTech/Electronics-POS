@@ -76,11 +76,18 @@ ALLOWED_HOSTS = sorted({
 CSRF_TRUSTED_ORIGINS = [
     "https://electronics-pos-production.up.railway.app",
     "https://radiant-inspiration-production-77d51767.up.railway.app",
+    "https://api.electronicspos.shop",
     "https://electronicspos.shop",
     "https://www.electronicspos.shop",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+CSRF_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_SAMESITE = "Lax"
 
 CORS_ALLOWED_ORIGINS = [
     # React development
@@ -89,6 +96,7 @@ CORS_ALLOWED_ORIGINS = [
 
     # Production React frontend
     "https://radiant-inspiration-production-77d51767.up.railway.app",
+    "https://api.electronicspos.shop",
     "https://electronicspos.shop",
     "https://www.electronicspos.shop",
 

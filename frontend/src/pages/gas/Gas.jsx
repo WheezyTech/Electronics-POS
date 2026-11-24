@@ -1,10 +1,52 @@
 import { useEffect, useState } from "react";
 import api from "../../api/axios";
 import { useAuth } from "../../context/AuthContext";
-import { Flame, RefreshCw, Plus, ShoppingCart, ArrowLeftRight, X } from "lucide-react";
+import ReceiptPreview from "../../components/ReceiptPreview";
+import { Flame, RefreshCw, Plus, ShoppingCart, ArrowLeftRight, X, Printer, Search } from "lucide-react";
 
 const list = (data) => Array.isArray(data) ? data : data?.results || [];
 const money = (value) => `KSh ${Number(value || 0).toLocaleString("en-KE", { minimumFractionDigits: 2 })}`;
+const buildGasReceipt = (transaction, label) => {
+  const total = transaction.total_amount || transaction.refill_payment || "0.00";
+  const cylinderItem = {
+    id: `${transaction.reference}-${label}`,
+    product_name: label,
+    quantity: transaction.quantity || 1,
+    unit_price: transaction.refill_price || transaction.selling_price || transaction.refill_payment || "0.00",
+    line_total: Number(transaction.selling_price || 0) * Number(transaction.quantity || 1)
+      || transaction.total_amount
+      || transaction.refill_payment
+      || "0.00",
+  };
+  const accessoryItems = (transaction.accessory_items || []).map((item) => ({
+    id: item.id,
+    product_name: item.product_name,
+    quantity: item.quantity,
+    unit_price: item.unit_price,
+    line_total: item.line_total,
+  }));
+
+  return {
+    reference: transaction.reference,
+    created_at: transaction.created_at,
+    location_name: transaction.location_name,
+    cashier_name: transaction.recorded_by_name,
+    customer_name: transaction.customer_name,
+    customer_phone: transaction.customer_phone,
+    subtotal: total,
+    discount_amount: "0.00",
+    tax_amount: "0.00",
+    total_amount: total,
+    sync_status: "SYNCHRONIZED",
+    items: accessoryItems.length ? [cylinderItem, ...accessoryItems] : [cylinderItem],
+    payments: transaction.payment_method ? [{
+      id: `${transaction.reference}-payment`,
+      payment_method: transaction.payment_method,
+      amount: total,
+      transaction_reference: transaction.transaction_reference,
+    }] : [],
+  };
+};
 
 export default function Gas() {
   const { user } = useAuth();
@@ -18,6 +60,12 @@ export default function Gas() {
   const [stock, setStock] = useState([]);
   const [movements, setMovements] = useState([]);
   const [report, setReport] = useState(null);
+  const [refills, setRefills] = useState([]);
+  const [exchanges, setExchanges] = useState([]);
+  const [gasSales, setGasSales] = useState([]);
+  const [stockFilter, setStockFilter] = useState({ location: "", brand: "", size: "" });
+  const [salesFilter, setSalesFilter] = useState({ location: "", brand: "", size: "", dateFrom: "", dateTo: "" });
+  const [receiptSale, setReceiptSale] = useState(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [brandName, setBrandName] = useState("");
@@ -55,16 +103,30 @@ export default function Gas() {
   const load = async () => {
     setError("");
     try {
-      const [brandsR, sizesR, locationsR, suppliersR, productsR, stockR, reportR, movementsR] = await Promise.all([
+      const salesParams = {};
+      if (salesFilter.location) salesParams.location = salesFilter.location;
+      if (salesFilter.brand) salesParams.brand = salesFilter.brand;
+      if (salesFilter.size) salesParams.size = salesFilter.size;
+      if (salesFilter.dateFrom) salesParams.date_from = salesFilter.dateFrom;
+      if (salesFilter.dateTo) salesParams.date_to = salesFilter.dateTo;
+      const stockParams = {};
+      if (stockFilter.location) stockParams.location = stockFilter.location;
+      if (stockFilter.brand) stockParams.brand = stockFilter.brand;
+      if (stockFilter.size) stockParams.size = stockFilter.size;
+      const [brandsR, sizesR, locationsR, suppliersR, productsR, stockR, reportR, movementsR, refillsR, exchangesR, salesR] = await Promise.all([
         api.get("/gas/brands/"), api.get("/gas/sizes/"), api.get("/inventory/locations/"),
         api.get("/purchases/suppliers/"), api.get("/products/products/"),
-        api.get("/gas/stock/"), api.get("/gas/reports/"),
-        api.get("/gas/movements/?ordering=-created_at"),
+        api.get("/gas/stock/", { params: stockParams }), api.get("/gas/reports/"),
+        api.get("/gas/movements/", { params: { ordering: "-created_at" } }),
+        api.get("/gas/refills/", { params: salesParams }),
+        api.get("/gas/exchanges/", { params: salesParams }),
+        api.get("/gas/sales/", { params: salesParams }),
       ]);
       setBrands(list(brandsR.data)); setSizes(list(sizesR.data)); setLocations(list(locationsR.data));
       setSuppliers(list(suppliersR.data)); setProducts(list(productsR.data));
       setStock(list(stockR.data)); setReport(reportR.data);
       setMovements(list(movementsR.data));
+      setRefills(list(refillsR.data)); setExchanges(list(exchangesR.data)); setGasSales(list(salesR.data));
     } catch {
       setError("Unable to load gas data.");
     }
@@ -77,12 +139,14 @@ export default function Gas() {
   const create = async (path, payload, successMessage) => {
     setError(""); setMessage("");
     try {
-      await api.post(path, payload);
+      const response = await api.post(path, payload);
       setMessage(successMessage);
       await load();
+      return response.data;
     } catch (err) {
       const data = err?.response?.data;
       setError(typeof data === "string" ? data : data?.detail || data?.non_field_errors?.[0] || "Transaction could not be recorded.");
+      return null;
     }
   };
 
@@ -119,7 +183,7 @@ export default function Gas() {
   const tabs = [
     ["overview", "Overview"], ["refill", "Gas refill"], ["exchange", "Empty exchange"],
     ["sale", "New cylinder sale"], ["purchase", "Gas purchase"], ["stock", "Record stock"],
-    ["setup", "Brands & sizes"],
+    ["sales", "Sales history"], ["setup", "Brands & sizes"],
   ].filter(([id]) => canManageGas || !["purchase", "stock", "setup"].includes(id));
 
   return (
@@ -143,6 +207,12 @@ export default function Gas() {
             <Metric title="Outstanding deposits" value={money(report?.outstanding_cylinder_deposits)} icon={ShoppingCart}/>
           </div>
           <Card title="Cylinder stock">
+            <div className="mb-4 grid gap-2 md:grid-cols-3">
+              <Select required={false} value={stockFilter.location} onChange={(value) => setStockFilter((current) => ({ ...current, location: value }))} label="Filter by location" options={[["", "All locations"], ...locations.map((item) => [item.id, item.name])]} />
+              <Select required={false} value={stockFilter.brand} onChange={(value) => setStockFilter((current) => ({ ...current, brand: value }))} label="Filter by brand" options={[["", "All brands"], ...brands.map((item) => [item.id, item.name])]} />
+              <Select required={false} value={stockFilter.size} onChange={(value) => setStockFilter((current) => ({ ...current, size: value }))} label="Filter by size" options={[["", "All sizes"], ...sizes.map((item) => [item.id, item.name])]} />
+            </div>
+            <button type="button" onClick={load} className="mb-3 inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"><Search size={14}/> Apply stock filters</button>
             <Table headers={["Location", "Brand", "Size", "Full", "Empty"]}>
               {stock.map((row) => <tr key={row.id} className="border-t"><td>{row.location_name}</td><td>{row.brand_name}</td><td>{row.size_name}</td><td>{row.full_quantity}</td><td>{row.empty_quantity}</td></tr>)}
             </Table>
@@ -160,7 +230,7 @@ export default function Gas() {
           <p className="mb-4 text-sm text-slate-600">
             Record the empty cylinder brand received and the full cylinder brand supplied. If the brands differ, stock records the empty under the customer’s brand and the full cylinder under the supplied brand.
           </p>
-          <form onSubmit={(e) => { e.preventDefault(); create("/gas/refills/create_refill/", { ...refill, customer_brand: refill.customer_brand || refill.brand, quantity: Number(refill.quantity), refill_price: refill.refill_price }, "Gas refill recorded."); }} className="grid gap-3 md:grid-cols-3">
+          <form onSubmit={async (e) => { e.preventDefault(); const recorded = await create("/gas/refills/create_refill/", { ...refill, customer_brand: refill.customer_brand || refill.brand, quantity: Number(refill.quantity), refill_price: refill.refill_price }, "Gas refill recorded."); if (recorded) setReceiptSale(buildGasReceipt(recorded, "GAS REFILL")); }} className="grid gap-3 md:grid-cols-3">
             <Select value={refill.location} onChange={(v) => setRefill({...refill, location: v})} label="Location" options={locations.map(x => [x.id, x.name])}/>
             <Select value={refill.customer_brand} onChange={(v) => setRefill({...refill, customer_brand: v})} label="Customer's empty cylinder brand" options={brands.map(x => [x.id, x.name])}/>
             <Select value={refill.brand} onChange={(v) => setRefill({...refill, brand: v, customer_brand: refill.customer_brand || v})} label="Full cylinder brand supplied" options={brands.map(x => [x.id, x.name])}/>
@@ -181,7 +251,7 @@ export default function Gas() {
           <div className="mb-4 rounded-lg bg-blue-50 p-3 text-sm text-blue-800">
             Exchange records the customer’s empty cylinder into empty stock and issues one full cylinder from full stock. For example, a 13kg Total exchange changes Full by -1 and Empty by +1. It will be rejected if there is not enough full stock.
           </div>
-          <form onSubmit={(e) => { e.preventDefault(); create("/gas/exchanges/create_exchange/", { ...exchange, quantity: Number(exchange.quantity), refill_payment: exchange.refill_payment }, "Cylinder exchange recorded."); }} className="grid gap-3 md:grid-cols-3">
+          <form onSubmit={async (e) => { e.preventDefault(); const recorded = await create("/gas/exchanges/create_exchange/", { ...exchange, quantity: Number(exchange.quantity), refill_payment: exchange.refill_payment }, "Cylinder exchange recorded."); if (recorded) setReceiptSale(buildGasReceipt(recorded, "CYLINDER EXCHANGE")); }} className="grid gap-3 md:grid-cols-3">
             <Select value={exchange.location} onChange={(v) => setExchange({...exchange, location: v})} label="Location" options={locations.map(x => [x.id, x.name])}/>
             <Select value={exchange.brand} onChange={(v) => setExchange({...exchange, brand: v})} label="Gas brand" options={brands.map(x => [x.id, x.name])}/>
             <Select value={exchange.size} onChange={(v) => setExchange({...exchange, size: v})} label="Cylinder size" options={sizes.map(x => [x.id, x.name])}/>
@@ -198,9 +268,9 @@ export default function Gas() {
 
       {tab === "sale" && (
         <Card title="Sell a new or complete cylinder">
-          <form onSubmit={(e) => {
+          <form onSubmit={async (e) => {
             e.preventDefault();
-            create("/gas/sales/create_sale/", {
+            const recorded = await create("/gas/sales/create_sale/", {
               ...sale,
               quantity: Number(sale.quantity),
               selling_price: sale.selling_price,
@@ -215,6 +285,7 @@ export default function Gas() {
                   }))
                 : [],
             }, "Cylinder sale recorded.");
+            if (recorded) setReceiptSale(buildGasReceipt(recorded, `${recorded.status || "CYLINDER"} CYLINDER SALE`));
           }} className="grid gap-3 md:grid-cols-3">
             <Select value={sale.location} onChange={(v) => setSale({...sale, location: v})} label="Location" options={locations.map(x => [x.id, x.name])}/>
             <Select value={sale.brand} onChange={(v) => setSale({...sale, brand: v})} label="Cylinder brand" options={brands.map(x => [x.id, x.name])}/>
@@ -394,6 +465,39 @@ export default function Gas() {
         </Card>
       )}
 
+      {tab === "sales" && (
+        <div className="space-y-6">
+          <Card title="Filter Gas & LPG sales">
+            <div className="grid gap-2 md:grid-cols-5">
+              <Select required={false} value={salesFilter.location} onChange={(value) => setSalesFilter((current) => ({ ...current, location: value }))} label="Location" options={[["", "All locations"], ...locations.map((item) => [item.id, item.name])]} />
+              <Select required={false} value={salesFilter.brand} onChange={(value) => setSalesFilter((current) => ({ ...current, brand: value }))} label="Brand" options={[["", "All brands"], ...brands.map((item) => [item.id, item.name])]} />
+              <Select required={false} value={salesFilter.size} onChange={(value) => setSalesFilter((current) => ({ ...current, size: value }))} label="Size" options={[["", "All sizes"], ...sizes.map((item) => [item.id, item.name])]} />
+              <Input required={false} label="From date" type="date" value={salesFilter.dateFrom} onChange={(value) => setSalesFilter((current) => ({ ...current, dateFrom: value }))} />
+              <Input required={false} label="To date" type="date" value={salesFilter.dateTo} onChange={(value) => setSalesFilter((current) => ({ ...current, dateTo: value }))} />
+            </div>
+            <button type="button" onClick={load} className="mt-3 inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"><Search size={14}/> Apply sales filters</button>
+          </Card>
+          <Card title="Refills">
+            <Table headers={["Date", "Reference", "Cashier", "Location", "Brand", "Quantity", "Amount", "Receipt"]}>
+              {refills.map((item) => <tr key={item.id} className="border-t"><td>{new Date(item.created_at).toLocaleString()}</td><td>{item.reference}</td><td>{item.recorded_by_name || "—"}</td><td>{item.location_name}</td><td>{item.brand_name}</td><td>{item.quantity}</td><td>{money(item.total_amount)}</td><td><button type="button" onClick={() => setReceiptSale(buildGasReceipt(item, "GAS REFILL"))} className="inline-flex items-center gap-1 text-blue-700"><Printer size={14}/> Print</button></td></tr>)}
+              {!refills.length && <tr><td colSpan="8" className="py-3 text-slate-500">No refills found</td></tr>}
+            </Table>
+          </Card>
+          <Card title="Cylinder exchanges">
+            <Table headers={["Date", "Reference", "Cashier", "Location", "Brand", "Quantity", "Payment", "Receipt"]}>
+              {exchanges.map((item) => <tr key={item.id} className="border-t"><td>{new Date(item.created_at).toLocaleString()}</td><td>{item.reference}</td><td>{item.recorded_by_name || "—"}</td><td>{item.location_name}</td><td>{item.brand_name}</td><td>{item.quantity}</td><td>{money(item.refill_payment)}</td><td><button type="button" onClick={() => setReceiptSale(buildGasReceipt(item, "CYLINDER EXCHANGE"))} className="inline-flex items-center gap-1 text-blue-700"><Printer size={14}/> Print</button></td></tr>)}
+              {!exchanges.length && <tr><td colSpan="8" className="py-3 text-slate-500">No exchanges found</td></tr>}
+            </Table>
+          </Card>
+          <Card title="Cylinder sales">
+            <Table headers={["Date", "Reference", "Cashier", "Location", "Brand", "Status", "Quantity", "Amount", "Receipt"]}>
+              {gasSales.map((item) => <tr key={item.id} className="border-t"><td>{new Date(item.created_at).toLocaleString()}</td><td>{item.reference}</td><td>{item.recorded_by_name || "—"}</td><td>{item.location_name}</td><td>{item.brand_name}</td><td>{item.status}</td><td>{item.quantity}</td><td>{money(item.total_amount)}</td><td><button type="button" onClick={() => setReceiptSale(buildGasReceipt(item, `${item.status} CYLINDER SALE`))} className="inline-flex items-center gap-1 text-blue-700"><Printer size={14}/> Print</button></td></tr>)}
+              {!gasSales.length && <tr><td colSpan="9" className="py-3 text-slate-500">No cylinder sales found</td></tr>}
+            </Table>
+          </Card>
+        </div>
+      )}
+
       {tab === "setup" && (
         <div className="grid gap-6 lg:grid-cols-2">
           <Card title="Gas brands">
@@ -420,6 +524,12 @@ export default function Gas() {
             </Table>
           </Card>
         </div>
+      )}
+      {receiptSale && (
+        <ReceiptPreview
+          sale={receiptSale}
+          onClose={() => setReceiptSale(null)}
+        />
       )}
     </div>
   );

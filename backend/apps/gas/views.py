@@ -100,6 +100,14 @@ class StockViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = GasStockSerializer
     permission_classes = [IsAuthenticated, GasAuthorizedPermission]
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        for field in ("location", "brand", "size"):
+            value = self.request.query_params.get(field)
+            if value:
+                queryset = queryset.filter(**{f"{field}_id": value})
+        return queryset
+
     @action(detail=False, methods=["post"])
     @transaction.atomic
     def record(self, request):
@@ -187,6 +195,30 @@ class RefillViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = GasRefillSerializer
     permission_classes = [IsAuthenticated, GasTransactionPermission]
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if not (
+            user.is_superuser
+            or getattr(user, "role", "") in {
+                "ADMINISTRATOR",
+                "STORE_MANAGER",
+                "SUPERVISOR",
+            }
+        ):
+            queryset = queryset.filter(recorded_by=user)
+        for field in ("location", "brand", "size"):
+            value = self.request.query_params.get(field)
+            if value:
+                queryset = queryset.filter(**{f"{field}_id": value})
+        date_from = self.request.query_params.get("date_from")
+        date_to = self.request.query_params.get("date_to")
+        if date_from:
+            queryset = queryset.filter(created_at__date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(created_at__date__lte=date_to)
+        return queryset
+
     @action(detail=False, methods=["post"])
     @transaction.atomic
     def create_refill(self, request):
@@ -239,6 +271,30 @@ class ExchangeViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = GasExchange.objects.select_related("location", "brand", "size")
     serializer_class = GasExchangeSerializer
     permission_classes = [IsAuthenticated, GasTransactionPermission]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if not (
+            user.is_superuser
+            or getattr(user, "role", "") in {
+                "ADMINISTRATOR",
+                "STORE_MANAGER",
+                "SUPERVISOR",
+            }
+        ):
+            queryset = queryset.filter(recorded_by=user)
+        for field in ("location", "brand", "size"):
+            value = self.request.query_params.get(field)
+            if value:
+                queryset = queryset.filter(**{f"{field}_id": value})
+        date_from = self.request.query_params.get("date_from")
+        date_to = self.request.query_params.get("date_to")
+        if date_from:
+            queryset = queryset.filter(created_at__date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(created_at__date__lte=date_to)
+        return queryset
 
     @action(detail=False, methods=["post"])
     @transaction.atomic
@@ -335,6 +391,30 @@ class NewCylinderSaleViewSet(viewsets.ReadOnlyModelViewSet):
     ).prefetch_related("accessory_items__product")
     serializer_class = NewCylinderSaleSerializer
     permission_classes = [IsAuthenticated, GasTransactionPermission]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if not (
+            user.is_superuser
+            or getattr(user, "role", "") in {
+                "ADMINISTRATOR",
+                "STORE_MANAGER",
+                "SUPERVISOR",
+            }
+        ):
+            queryset = queryset.filter(recorded_by=user)
+        for field in ("location", "brand", "size"):
+            value = self.request.query_params.get(field)
+            if value:
+                queryset = queryset.filter(**{f"{field}_id": value})
+        date_from = self.request.query_params.get("date_from")
+        date_to = self.request.query_params.get("date_to")
+        if date_from:
+            queryset = queryset.filter(created_at__date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(created_at__date__lte=date_to)
+        return queryset
 
     @action(detail=False, methods=["post"])
     @transaction.atomic
