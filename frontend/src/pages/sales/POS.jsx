@@ -110,6 +110,7 @@ export default function POS() {
   const [error, setError] = useState("");
   const [receiptSale, setReceiptSale] = useState(null);
   const [draftSale, setDraftSale] = useState(null);
+  const [businessSettings, setBusinessSettings] = useState(null);
   const [loadedDraftId, setLoadedDraftId] = useState(null);
   const [failedDraftId, setFailedDraftId] = useState(null);
   const saleAudioContext = useRef(null);
@@ -230,6 +231,12 @@ export default function POS() {
         );
       })
       .catch(() => setError("Unable to load product filters."));
+  }, []);
+
+  useEffect(() => {
+    api.get("/configuration/settings/")
+      .then((response) => setBusinessSettings(response.data))
+      .catch(() => setBusinessSettings(null));
   }, []);
 
   useEffect(() => {
@@ -480,17 +487,32 @@ export default function POS() {
     setCart((current) => current.filter((item) => item.id !== id));
   };
 
+  const cartSubtotal = cart.reduce(
+    (sum, item) =>
+      sum +
+      Number(item.price || 0) * item.quantity -
+      Number(item.discountAmount || 0),
+    0
+  );
+  const draftDiscount = Number(draftSale?.discount_amount || 0);
+  const configuredTaxEnabled = Boolean(businessSettings?.tax_enabled);
+  const configuredTaxRate = Number(businessSettings?.tax_rate || 0);
+  const configuredPricesIncludeTax = Boolean(businessSettings?.prices_include_tax);
+  const draftTax = draftSale
+    ? Number(draftSale.tax_amount || 0)
+    : 0;
+  const calculatedTax = !draftSale && configuredTaxEnabled
+    ? configuredPricesIncludeTax
+      ? (cartSubtotal - (cartSubtotal * 100) / (100 + configuredTaxRate))
+      : (cartSubtotal * configuredTaxRate) / 100
+    : draftTax;
+  const effectiveTax = Number(calculatedTax || 0);
+  const effectiveSubtotal = Number((cartSubtotal - draftDiscount).toFixed(2));
   const total = Number(
     (
-      cart.reduce(
-        (sum, item) =>
-          sum +
-          Number(item.price || 0) * item.quantity -
-          Number(item.discountAmount || 0),
-        0
-      ) -
-      Number(draftSale?.discount_amount || 0) +
-      Number(draftSale?.tax_amount || 0)
+      configuredPricesIncludeTax
+        ? effectiveSubtotal
+        : effectiveSubtotal + effectiveTax
     ).toFixed(2)
   );
 
@@ -631,7 +653,10 @@ export default function POS() {
       customer_phone: customerPhone,
       subtotal: subtotal.toFixed(2),
       discount_amount: Number(draftSale?.discount_amount || 0).toFixed(2),
-      tax_amount: Number(draftSale?.tax_amount || 0).toFixed(2),
+      tax_amount: (draftSale
+        ? Number(draftSale.tax_amount || 0)
+        : effectiveTax
+      ).toFixed(2),
       total_amount: total.toFixed(2),
       status: "COMPLETED",
       sync_status: "PENDING",
@@ -881,7 +906,8 @@ export default function POS() {
           reference: receiptReference,
           location: Number(location),
           customer_name: customerName,
-          customer_phone: customerPhone
+            customer_phone: customerPhone,
+            tax_amount: effectiveTax.toFixed(2),
         });
 
         sale = {

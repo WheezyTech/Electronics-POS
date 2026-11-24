@@ -2,15 +2,24 @@ import { useEffect, useState } from "react";
 import api from "../../api/axios";
 import { useAuth } from "../../context/AuthContext";
 import ReceiptPreview from "../../components/ReceiptPreview";
-import { Flame, RefreshCw, Plus, ShoppingCart, ArrowLeftRight, X, Printer, Search } from "lucide-react";
+import { Flame, RefreshCw, Plus, ShoppingCart, ArrowLeftRight, X, Printer, Search, Eye } from "lucide-react";
 
 const list = (data) => Array.isArray(data) ? data : data?.results || [];
 const money = (value) => `KSh ${Number(value || 0).toLocaleString("en-KE", { minimumFractionDigits: 2 })}`;
+const dateTimeMillis = (value) => {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return `${date.toLocaleString("en-KE", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  })}.${String(date.getMilliseconds()).padStart(3, "0")}`;
+};
 const buildGasReceipt = (transaction, label) => {
   const total = transaction.total_amount || transaction.refill_payment || "0.00";
   const cylinderItem = {
     id: `${transaction.reference}-${label}`,
-    product_name: label,
+    product_name: `${label} — ${transaction.brand_name || "Brand"} ${transaction.size_name ? `(${transaction.size_name})` : ""}`.trim(),
     quantity: transaction.quantity || 1,
     unit_price: transaction.refill_price || transaction.selling_price || transaction.refill_payment || "0.00",
     line_total: Number(transaction.selling_price || 0) * Number(transaction.quantity || 1)
@@ -33,10 +42,14 @@ const buildGasReceipt = (transaction, label) => {
     cashier_name: transaction.recorded_by_name,
     customer_name: transaction.customer_name,
     customer_phone: transaction.customer_phone,
-    subtotal: total,
+    subtotal: transaction.tax_included
+      ? String(Number(total) - Number(transaction.tax_amount || 0))
+      : total,
     discount_amount: "0.00",
-    tax_amount: "0.00",
-    total_amount: total,
+    tax_amount: transaction.tax_amount || "0.00",
+    total_amount: transaction.tax_included
+      ? total
+      : String(Number(total) + Number(transaction.tax_amount || 0)),
     sync_status: "SYNCHRONIZED",
     items: accessoryItems.length ? [cylinderItem, ...accessoryItems] : [cylinderItem],
     payments: transaction.payment_method ? [{
@@ -66,6 +79,7 @@ export default function Gas() {
   const [stockFilter, setStockFilter] = useState({ location: "", brand: "", size: "" });
   const [salesFilter, setSalesFilter] = useState({ location: "", brand: "", size: "", dateFrom: "", dateTo: "" });
   const [receiptSale, setReceiptSale] = useState(null);
+  const [selectedGasSale, setSelectedGasSale] = useState(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [brandName, setBrandName] = useState("");
@@ -145,7 +159,19 @@ export default function Gas() {
       return response.data;
     } catch (err) {
       const data = err?.response?.data;
-      setError(typeof data === "string" ? data : data?.detail || data?.non_field_errors?.[0] || "Transaction could not be recorded.");
+      const exactMessage = (() => {
+        if (!data) return "";
+        if (typeof data === "string") return data;
+        if (typeof data.detail === "string") return data.detail;
+        if (Array.isArray(data.detail)) return data.detail.join(", ");
+        if (Array.isArray(data.non_field_errors)) return data.non_field_errors.join(", ");
+        const fieldError = Object.entries(data).find(([, value]) => value);
+        if (!fieldError) return "";
+        const [field, value] = fieldError;
+        const message = Array.isArray(value) ? value.join(", ") : String(value);
+        return `${field.replaceAll("_", " ")}: ${message}`;
+      })();
+      setError(exactMessage || err?.message || "Transaction could not be recorded.");
       return null;
     }
   };
@@ -478,21 +504,21 @@ export default function Gas() {
             <button type="button" onClick={load} className="mt-3 inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"><Search size={14}/> Apply sales filters</button>
           </Card>
           <Card title="Refills">
-            <Table headers={["Date", "Reference", "Cashier", "Location", "Brand", "Quantity", "Amount", "Receipt"]}>
-              {refills.map((item) => <tr key={item.id} className="border-t"><td>{new Date(item.created_at).toLocaleString()}</td><td>{item.reference}</td><td>{item.recorded_by_name || "—"}</td><td>{item.location_name}</td><td>{item.brand_name}</td><td>{item.quantity}</td><td>{money(item.total_amount)}</td><td><button type="button" onClick={() => setReceiptSale(buildGasReceipt(item, "GAS REFILL"))} className="inline-flex items-center gap-1 text-blue-700"><Printer size={14}/> Print</button></td></tr>)}
-              {!refills.length && <tr><td colSpan="8" className="py-3 text-slate-500">No refills found</td></tr>}
+            <Table headers={["Date", "Reference", "Cashier", "Location", "Brand", "Size", "Quantity", "Tax", "Amount", "Actions"]}>
+              {refills.map((item) => <tr key={item.id} className="border-t"><td>{dateTimeMillis(item.created_at)}</td><td>{item.reference}</td><td>{item.recorded_by_name || "—"}</td><td>{item.location_name}</td><td>{item.brand_name}</td><td>{item.size_name}</td><td>{item.quantity}</td><td>{money(item.tax_amount)}</td><td>{money(item.tax_included ? item.total_amount : Number(item.total_amount) + Number(item.tax_amount || 0))}</td><td><div className="flex items-center gap-2"><button type="button" onClick={() => setSelectedGasSale({ type: "REFILL", data: item })} className="inline-flex items-center gap-1 text-blue-700"><Eye size={14}/> View</button><button type="button" onClick={() => setReceiptSale(buildGasReceipt(item, "GAS REFILL"))} className="inline-flex items-center gap-1 text-slate-700"><Printer size={14}/> Print</button></div></td></tr>)}
+              {!refills.length && <tr><td colSpan="10" className="py-3 text-slate-500">No refills found</td></tr>}
             </Table>
           </Card>
           <Card title="Cylinder exchanges">
-            <Table headers={["Date", "Reference", "Cashier", "Location", "Brand", "Quantity", "Payment", "Receipt"]}>
-              {exchanges.map((item) => <tr key={item.id} className="border-t"><td>{new Date(item.created_at).toLocaleString()}</td><td>{item.reference}</td><td>{item.recorded_by_name || "—"}</td><td>{item.location_name}</td><td>{item.brand_name}</td><td>{item.quantity}</td><td>{money(item.refill_payment)}</td><td><button type="button" onClick={() => setReceiptSale(buildGasReceipt(item, "CYLINDER EXCHANGE"))} className="inline-flex items-center gap-1 text-blue-700"><Printer size={14}/> Print</button></td></tr>)}
-              {!exchanges.length && <tr><td colSpan="8" className="py-3 text-slate-500">No exchanges found</td></tr>}
+            <Table headers={["Date", "Reference", "Cashier", "Location", "Brand", "Size", "Quantity", "Tax", "Payment", "Actions"]}>
+              {exchanges.map((item) => <tr key={item.id} className="border-t"><td>{dateTimeMillis(item.created_at)}</td><td>{item.reference}</td><td>{item.recorded_by_name || "—"}</td><td>{item.location_name}</td><td>{item.brand_name}</td><td>{item.size_name}</td><td>{item.quantity}</td><td>{money(item.tax_amount)}</td><td>{money(item.tax_included ? item.refill_payment : Number(item.refill_payment) + Number(item.tax_amount || 0))}</td><td><div className="flex items-center gap-2"><button type="button" onClick={() => setSelectedGasSale({ type: "EXCHANGE", data: item })} className="inline-flex items-center gap-1 text-blue-700"><Eye size={14}/> View</button><button type="button" onClick={() => setReceiptSale(buildGasReceipt(item, "CYLINDER EXCHANGE"))} className="inline-flex items-center gap-1 text-slate-700"><Printer size={14}/> Print</button></div></td></tr>)}
+              {!exchanges.length && <tr><td colSpan="10" className="py-3 text-slate-500">No exchanges found</td></tr>}
             </Table>
           </Card>
           <Card title="Cylinder sales">
-            <Table headers={["Date", "Reference", "Cashier", "Location", "Brand", "Status", "Quantity", "Amount", "Receipt"]}>
-              {gasSales.map((item) => <tr key={item.id} className="border-t"><td>{new Date(item.created_at).toLocaleString()}</td><td>{item.reference}</td><td>{item.recorded_by_name || "—"}</td><td>{item.location_name}</td><td>{item.brand_name}</td><td>{item.status}</td><td>{item.quantity}</td><td>{money(item.total_amount)}</td><td><button type="button" onClick={() => setReceiptSale(buildGasReceipt(item, `${item.status} CYLINDER SALE`))} className="inline-flex items-center gap-1 text-blue-700"><Printer size={14}/> Print</button></td></tr>)}
-              {!gasSales.length && <tr><td colSpan="9" className="py-3 text-slate-500">No cylinder sales found</td></tr>}
+            <Table headers={["Date", "Reference", "Cashier", "Location", "Brand", "Size", "Status", "Quantity", "Tax", "Amount", "Actions"]}>
+              {gasSales.map((item) => <tr key={item.id} className="border-t"><td>{dateTimeMillis(item.created_at)}</td><td>{item.reference}</td><td>{item.recorded_by_name || "—"}</td><td>{item.location_name}</td><td>{item.brand_name}</td><td>{item.size_name}</td><td>{item.status}</td><td>{item.quantity}</td><td>{money(item.tax_amount)}</td><td>{money(item.tax_included ? item.total_amount : Number(item.total_amount) + Number(item.tax_amount || 0))}</td><td><div className="flex items-center gap-2"><button type="button" onClick={() => setSelectedGasSale({ type: "CYLINDER SALE", data: item })} className="inline-flex items-center gap-1 text-blue-700"><Eye size={14}/> View</button><button type="button" onClick={() => setReceiptSale(buildGasReceipt(item, `${item.status} CYLINDER SALE`))} className="inline-flex items-center gap-1 text-slate-700"><Printer size={14}/> Print</button></div></td></tr>)}
+              {!gasSales.length && <tr><td colSpan="11" className="py-3 text-slate-500">No cylinder sales found</td></tr>}
             </Table>
           </Card>
         </div>
@@ -531,11 +557,86 @@ export default function Gas() {
           onClose={() => setReceiptSale(null)}
         />
       )}
+      {selectedGasSale && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 p-4">
+          <div className="my-6 w-full max-w-3xl rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b p-5">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Gas & LPG Sale Details</p>
+                <h2 className="mt-1 text-xl font-bold text-slate-900">{selectedGasSale.data.reference}</h2>
+                <p className="mt-1 text-sm text-slate-500">{selectedGasSale.type}</p>
+              </div>
+              <button type="button" onClick={() => setSelectedGasSale(null)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Close sale details"><X size={20}/></button>
+            </div>
+            <div className="grid gap-4 p-5 sm:grid-cols-2">
+              <Detail label="Date" value={dateTimeMillis(selectedGasSale.data.created_at)} />
+              <Detail label="Cashier" value={selectedGasSale.data.recorded_by_name || "—"} />
+              <Detail label="Location" value={selectedGasSale.data.location_name || "—"} />
+              <Detail label="Customer" value={selectedGasSale.data.customer_name || "Walk-in customer"} />
+              <Detail label="Customer phone" value={selectedGasSale.data.customer_phone || "—"} />
+              <Detail label="Brand" value={selectedGasSale.data.brand_name || "—"} />
+              <Detail label="Customer cylinder brand" value={selectedGasSale.data.customer_brand_name || "—"} />
+              <Detail label="Size" value={selectedGasSale.data.size_name || "—"} />
+              <Detail label="Quantity" value={selectedGasSale.data.quantity ?? "—"} />
+              {selectedGasSale.type === "CYLINDER SALE" && (
+                <>
+                  <Detail label="Cylinder status" value={selectedGasSale.data.status || "—"} />
+                  <Detail label="Includes gas" value={selectedGasSale.data.includes_gas ? "Yes" : "No"} />
+                  <Detail label="Deposit" value={money(selectedGasSale.data.deposit_amount)} />
+                </>
+              )}
+              <Detail label="Payment method" value={selectedGasSale.data.payment_method || "Not recorded"} />
+              <Detail label="Payment reference" value={selectedGasSale.data.transaction_reference || "—"} />
+              <Detail label="Tax rate" value={`${Number(selectedGasSale.data.tax_rate || 0)}%`} />
+              <Detail label="Tax" value={money(selectedGasSale.data.tax_amount)} />
+              {selectedGasSale.type === "REFILL" && (
+                <>
+                  <Detail label="Refill price" value={money(selectedGasSale.data.refill_price)} />
+                  <Detail label="Refill total" value={money(Number(selectedGasSale.data.total_amount || 0) + (selectedGasSale.data.tax_included ? 0 : Number(selectedGasSale.data.tax_amount || 0)))} />
+                </>
+              )}
+              {selectedGasSale.type === "EXCHANGE" && (
+                <Detail label="Exchange payment" value={money(Number(selectedGasSale.data.refill_payment || 0) + (selectedGasSale.data.tax_included ? 0 : Number(selectedGasSale.data.tax_amount || 0)))} />
+              )}
+              {selectedGasSale.type === "CYLINDER SALE" && (
+                <>
+                  <Detail label="Cylinder selling price" value={money(selectedGasSale.data.selling_price)} />
+                  <Detail label="Accessories total" value={money(selectedGasSale.data.accessories_total)} />
+                  <Detail label="Sale total" value={money(Number(selectedGasSale.data.total_amount || 0) + (selectedGasSale.data.tax_included ? 0 : Number(selectedGasSale.data.tax_amount || 0)))} />
+                </>
+              )}
+            </div>
+            {selectedGasSale.type === "CYLINDER SALE" && selectedGasSale.data.accessory_items?.length > 0 && (
+              <div className="px-5 pb-5">
+                <h3 className="mb-2 font-semibold text-slate-800">Accessories</h3>
+                <Table headers={["Product", "Quantity", "Unit price", "Line total"]}>
+                  {selectedGasSale.data.accessory_items.map((item) => (
+                    <tr key={item.id} className="border-t">
+                      <td>{item.product_name}</td>
+                      <td>{item.quantity}</td>
+                      <td>{money(item.unit_price)}</td>
+                      <td>{money(item.line_total)}</td>
+                    </tr>
+                  ))}
+                </Table>
+              </div>
+            )}
+            <div className="flex justify-end gap-2 border-t p-5">
+              <button type="button" onClick={() => setSelectedGasSale(null)} className="rounded-lg border px-4 py-2 text-sm">Close</button>
+              <button type="button" onClick={() => {
+                const item = selectedGasSale.data;
+                setReceiptSale(buildGasReceipt(item, `${selectedGasSale.type}`));
+              }} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white"><Printer size={16}/> Print receipt</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function Metric({ title, value, icon: Icon }) { return <div className="rounded-xl border bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><p className="text-sm text-slate-500">{title}</p><Icon size={20} className="text-orange-500"/></div><p className="mt-2 text-2xl font-bold text-slate-800">{value}</p></div>; }
+function Detail({ label, value }) { return <div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 break-words font-semibold text-slate-800">{value}</p></div>; }
 function Card({ title, children }) { return <div className="rounded-xl border bg-white p-5 shadow-sm"><h2 className="mb-4 font-semibold text-slate-800">{title}</h2>{children}</div>; }
 function Input({ label, value, onChange, type = "text", required = true, min, step }) { return <label className="text-sm text-slate-600">{label}<input required={required} type={type} min={min} step={step} value={value} onChange={(e) => onChange(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5"/></label>; }
 function Select({ label, value, onChange, options, required = true }) { return <label className="text-sm text-slate-600">{label}<select required={required} value={value} onChange={(e) => onChange(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5"><option value="">Select {label.toLowerCase()}</option>{options.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>; }

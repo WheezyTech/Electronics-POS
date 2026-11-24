@@ -9,7 +9,13 @@ export default function Settings() {
     business_email: "",
     business_address: "",
     currency: "KES",
+    kra_pin: "",
+    tax_enabled: false,
     tax_rate: 16,
+    prices_include_tax: false,
+    receipt_header: "",
+    receipt_footer: "Thank you for shopping with us!",
+    receipt_show_kra_pin: true,
   });
 
   const [loading, setLoading] = useState(true);
@@ -150,6 +156,41 @@ export default function Settings() {
             className="w-full rounded-lg border border-gray-300 p-3"
           />
         </div>
+
+        <label className="flex items-center gap-3 rounded-lg border p-3">
+          <input
+            type="checkbox"
+            name="tax_enabled"
+            checked={Boolean(settings.tax_enabled)}
+            onChange={(event) =>
+              setSettings((prev) => ({
+                ...prev,
+                tax_enabled: event.target.checked,
+              }))
+            }
+          />
+          <span>
+            <span className="block text-sm font-medium">Enable tax on sales</span>
+            <span className="text-xs text-gray-500">
+              Calculate and print tax on electronics and Gas & LPG transactions.
+            </span>
+          </span>
+        </label>
+
+        <label className="flex items-center gap-3 rounded-lg border p-3">
+          <input
+            type="checkbox"
+            name="prices_include_tax"
+            checked={Boolean(settings.prices_include_tax)}
+            onChange={(event) =>
+              setSettings((prev) => ({
+                ...prev,
+                prices_include_tax: event.target.checked,
+              }))
+            }
+          />
+          <span className="text-sm font-medium">Registered prices include tax</span>
+        </label>
 
         <button
           type="submit"

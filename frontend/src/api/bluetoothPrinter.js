@@ -10,6 +10,6 @@ export function getPairedBluetoothPrinters() {
   return BluetoothPrinter.getPairedDevices();
 }
 
-export function printBluetoothReceipt(address, text, logoBase64) {
-  return BluetoothPrinter.printReceipt({ address, text, logoBase64 });
+export function printBluetoothReceipt(address, text, logoBase64, qrBase64) {
+  return BluetoothPrinter.printReceipt({ address, text, logoBase64, qrBase64 });
 }

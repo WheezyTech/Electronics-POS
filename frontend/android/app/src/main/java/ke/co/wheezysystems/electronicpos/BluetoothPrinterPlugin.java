@@ -156,6 +156,12 @@ public class BluetoothPrinterPlugin extends Plugin {
                 output.write(new byte[] { 0x0A, 0x1B, 0x61, 0x00 });
             }
             output.write(text.getBytes(StandardCharsets.UTF_8));
+            String qrBase64 = call.getString("qrBase64");
+            if (qrBase64 != null && !qrBase64.isEmpty()) {
+                output.write(new byte[] { 0x0A, 0x1B, 0x61, 0x01 });
+                writeRasterLogo(output, qrBase64);
+                output.write(new byte[] { 0x0A, 0x1B, 0x61, 0x00 });
+            }
             output.write(new byte[] { 0x0A, 0x0A, 0x0A, 0x1D, 0x56, 0x00 });
             output.flush();
             call.resolve();

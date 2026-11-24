@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Printer, X } from "lucide-react";
+import QRCode from "qrcode";
 import {
   getPairedBluetoothPrinters,
   isAndroidNative,
@@ -17,10 +18,12 @@ const money = (value) =>
 const dateTime = (value) => {
   if (!value) return "—";
 
-  return new Date(value).toLocaleString("en-KE", {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return `${date.toLocaleString("en-KE", {
     dateStyle: "medium",
     timeStyle: "short",
-  });
+  })}.${String(date.getMilliseconds()).padStart(3, "0")}`;
 };
 
 async function getReceiptLogoBase64() {
@@ -90,6 +93,28 @@ export default function ReceiptPreview({ sale, onClose, autoPrint = false }) {
   const [showPrinterPicker, setShowPrinterPicker] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [printError, setPrintError] = useState("");
+  const [qrDataUrl, setQrDataUrl] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    QRCode.toDataURL(
+      JSON.stringify({
+        receipt: sale.reference,
+        total: sale.total_amount,
+        time: sale.client_completed_at || sale.completed_at || sale.created_at,
+      }),
+      { width: 180, margin: 1 }
+    )
+      .then((url) => {
+        if (active) setQrDataUrl(url);
+      })
+      .catch(() => {
+        if (active) setQrDataUrl("");
+      });
+    return () => {
+      active = false;
+    };
+  }, [sale.reference, sale.total_amount, sale.created_at, sale.completed_at, sale.client_completed_at]);
 
   const printReceipt = useCallback(async () => {
     setPrintError("");
@@ -114,7 +139,8 @@ export default function ReceiptPreview({ sale, onClose, autoPrint = false }) {
       await printBluetoothReceipt(
         rememberedPrinter.address,
         thermalReceiptText(sale),
-        await getReceiptLogoBase64()
+        await getReceiptLogoBase64(),
+        qrDataUrl ? qrDataUrl.split(",")[1] : ""
       );
     } catch (error) {
       setPrintError(
@@ -137,7 +163,8 @@ export default function ReceiptPreview({ sale, onClose, autoPrint = false }) {
       await printBluetoothReceipt(
         selectedPrinter,
         thermalReceiptText(sale),
-        await getReceiptLogoBase64()
+        await getReceiptLogoBase64(),
+        qrDataUrl ? qrDataUrl.split(",")[1] : ""
       );
       localStorage.setItem("receipt_printer_address", selectedPrinter);
       setShowPrinterPicker(false);
@@ -380,6 +407,15 @@ export default function ReceiptPreview({ sale, onClose, autoPrint = false }) {
           <p className="mt-3 text-center text-[10px]">
             Powered by Electronics POS
           </p>
+          {qrDataUrl && (
+            <div className="mt-3 flex justify-center">
+              <img
+                src={qrDataUrl}
+                alt={`QR code for receipt ${sale.reference}`}
+                className="h-28 w-28"
+              />
+            </div>
+          )}
         </div>
       </div>
 

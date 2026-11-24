@@ -92,8 +92,21 @@ class Sale(models.Model):
             Decimal("0.00")
         )
 
+        try:
+            from apps.configuration.models import BusinessSettings
+            settings = BusinessSettings.objects.filter(pk=1).first()
+            tax_is_included = bool(
+                settings
+                and settings.tax_enabled
+                and settings.prices_include_tax
+            )
+        except Exception:
+            tax_is_included = False
+
         self.total_amount = (
-            self.subtotal - self.discount_amount + self.tax_amount
+            self.subtotal - self.discount_amount
+            if tax_is_included
+            else self.subtotal - self.discount_amount + self.tax_amount
         )
 
         self.save(update_fields=[

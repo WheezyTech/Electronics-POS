@@ -26,6 +26,22 @@ from .permissions import GasAuthorizedPermission, GasTransactionPermission
 from apps.inventory.models import StockMovement
 from apps.inventory.services import change_stock
 from apps.products.models import Product
+from apps.configuration.models import BusinessSettings
+
+
+def get_transaction_tax(amount):
+    settings = BusinessSettings.objects.filter(pk=1).first()
+    if not settings or not settings.tax_enabled:
+        return Decimal("0.00"), Decimal("0.00"), False
+    rate = settings.tax_rate
+    amount = Decimal(str(amount))
+    if settings.prices_include_tax:
+        tax = amount - (amount * Decimal("100.00") / (Decimal("100.00") + rate))
+        tax_included = True
+    else:
+        tax = amount * rate / Decimal("100.00")
+        tax_included = False
+    return rate, tax.quantize(Decimal("0.01")), tax_included
 
 
 def reference(prefix):
@@ -234,13 +250,27 @@ class RefillViewSet(viewsets.ReadOnlyModelViewSet):
         if quantity < 1 or refill_price < 0:
             raise ValidationError("Quantity and refill price must be valid.")
         from apps.inventory.models import StockLocation
-        location = StockLocation.objects.get(pk=location_id)
-        brand = GasBrand.objects.get(pk=brand_id)
-        customer_brand = GasBrand.objects.get(
-            pk=data.get("customer_brand", brand_id)
-        )
-        size = GasCylinderSize.objects.get(pk=size_id)
+        try:
+            location = StockLocation.objects.get(pk=location_id, is_active=True)
+        except StockLocation.DoesNotExist:
+            raise ValidationError("The selected location is invalid or inactive.")
+        try:
+            brand = GasBrand.objects.get(pk=brand_id, is_active=True)
+        except GasBrand.DoesNotExist:
+            raise ValidationError("The selected full-cylinder brand is invalid or inactive.")
+        try:
+            customer_brand = GasBrand.objects.get(
+                pk=data.get("customer_brand", brand_id),
+                is_active=True,
+            )
+        except GasBrand.DoesNotExist:
+            raise ValidationError("The selected customer cylinder brand is invalid or inactive.")
+        try:
+            size = GasCylinderSize.objects.get(pk=size_id, is_active=True)
+        except GasCylinderSize.DoesNotExist:
+            raise ValidationError("The selected cylinder size is invalid or inactive.")
         total = refill_price * quantity
+        tax_rate, tax_amount, tax_included = get_transaction_tax(total)
         tx_reference = reference("REF")
         refill = GasRefill.objects.create(
             reference=tx_reference,
@@ -254,6 +284,9 @@ class RefillViewSet(viewsets.ReadOnlyModelViewSet):
             standard_option=data.get("standard_option", ""),
             refill_price=refill_price,
             total_amount=total,
+            tax_rate=tax_rate,
+            tax_amount=tax_amount,
+            tax_included=tax_included,
             payment_method=data.get("payment_method", ""),
             transaction_reference=data.get("transaction_reference", ""),
             recorded_by=request.user,
@@ -312,6 +345,7 @@ class ExchangeViewSet(viewsets.ReadOnlyModelViewSet):
         if quantity < 1:
             raise ValidationError("Quantity must be greater than zero.")
         tx_reference = reference("EXC")
+        tax_rate, tax_amount, tax_included = get_transaction_tax(refill_payment)
         exchange = GasExchange.objects.create(
             reference=tx_reference,
             location=location,
@@ -321,6 +355,9 @@ class ExchangeViewSet(viewsets.ReadOnlyModelViewSet):
             customer_phone=data.get("customer_phone", ""),
             quantity=quantity,
             refill_payment=refill_payment,
+            tax_rate=tax_rate,
+            tax_amount=tax_amount,
+            tax_included=tax_included,
             payment_method=data.get("payment_method", ""),
             transaction_reference=data.get("transaction_reference", ""),
             recorded_by=request.user,
@@ -484,6 +521,9 @@ class NewCylinderSaleViewSet(viewsets.ReadOnlyModelViewSet):
             ),
             Decimal("0.00"),
         )
+        cylinder_total = selling_price * quantity
+        gross_total = cylinder_total + accessories_total
+        tax_rate, tax_amount, tax_included = get_transaction_tax(gross_total)
         tx_reference = reference("GCS")
         sale = NewCylinderSale.objects.create(
             reference=tx_reference,
@@ -494,6 +534,9 @@ class NewCylinderSaleViewSet(viewsets.ReadOnlyModelViewSet):
             quantity=quantity,
             selling_price=selling_price,
             accessories_total=accessories_total,
+            tax_rate=tax_rate,
+            tax_amount=tax_amount,
+            tax_included=tax_included,
             deposit_amount=deposit_amount,
             includes_gas=(
                 True if status_value == "COMPLETE" else data.get("includes_gas", True)

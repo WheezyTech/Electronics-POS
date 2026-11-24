@@ -162,6 +162,9 @@ class GasRefill(models.Model):
     standard_option = models.CharField(max_length=100, blank=True)
     refill_price = models.DecimalField(max_digits=12, decimal_places=2)
     total_amount = models.DecimalField(max_digits=14, decimal_places=2)
+    tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    tax_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    tax_included = models.BooleanField(default=False)
     payment_method = models.CharField(
         max_length=20, choices=PaymentMethod.choices, blank=True, default=""
     )
@@ -182,6 +185,9 @@ class GasExchange(models.Model):
     customer_phone = models.CharField(max_length=30, blank=True)
     quantity = models.PositiveIntegerField(default=1)
     refill_payment = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    tax_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    tax_included = models.BooleanField(default=False)
     payment_method = models.CharField(
         max_length=20,
         choices=GasRefill.PaymentMethod.choices,
@@ -230,6 +236,9 @@ class NewCylinderSale(models.Model):
         max_digits=14, decimal_places=2, default=Decimal("0.00")
     )
     deposit_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    tax_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    tax_included = models.BooleanField(default=False)
     includes_gas = models.BooleanField(default=True)
     customer_name = models.CharField(max_length=150, blank=True)
     customer_phone = models.CharField(max_length=30, blank=True)
