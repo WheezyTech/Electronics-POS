@@ -65,21 +65,21 @@ class IsCashier(BasePermission):
                     "SUPERVISOR",
                 ]
             )
+        )
 
 
 def has_sector_access(user, sector):
     if not user or not user.is_authenticated:
-            return False
+        return False
     if user.is_superuser or getattr(user, "role", "") in {
-            "ADMINISTRATOR",
-            "STORE_MANAGER",
-            "SUPERVISOR",
-            "CASHIER",
+        "ADMINISTRATOR",
+        "STORE_MANAGER",
+        "SUPERVISOR",
+        "CASHIER",
     }:
-            return True
+        return True
     if sector == "ELECTRONICS":
-            return getattr(user, "role", "") == "ELECTRONICS_CASHIER"
+        return getattr(user, "role", "") == "ELECTRONICS_CASHIER"
     if sector == "GAS_LPG":
-            return getattr(user, "role", "") == "GAS_LPG_CASHIER"
+        return getattr(user, "role", "") == "GAS_LPG_CASHIER"
     return False
-        )
