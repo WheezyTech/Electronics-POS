@@ -4,6 +4,7 @@ from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ImproperlyConfigured
 from django.contrib.auth.tokens import default_token_generator
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -16,6 +17,10 @@ from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from .serializers import CustomTokenObtainPairSerializer
 from .models import Device, OfflineAuthorization
 from .email_tokens import email_verification_token
+from .phone_verification import (
+    normalize_kenyan_phone,
+    hash_phone_otp,
+)
 
 User = get_user_model()
 
@@ -321,6 +326,22 @@ class AccountEmailTests(TestCase):
         self.assertEqual(send_email.call_count, 1)
         self.assertIn("verify-email", send_email.call_args.args[1])
 
+    @patch(
+        "apps.accounts.views.send_email_verification",
+        side_effect=ImproperlyConfigured("RESEND_API_KEY is missing."),
+    )
+    def test_verification_request_reports_resend_configuration_failure(
+        self, send_email
+    ):
+        response = self.client.post(
+            reverse("email-verification-request"),
+            {"email": self.user.email},
+        )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("Resend email configuration", response.data["detail"])
+        send_email.assert_called_once_with(self.user)
+
     @patch("apps.accounts.email_tokens._send_resend_email")
     def test_password_reset_is_sent_only_to_verified_email(self, send_email):
         response = self.client.post(
@@ -375,6 +396,141 @@ class AccountEmailTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.user.refresh_from_db()
         self.assertTrue(self.user.email_verified)
+
+    @patch("apps.accounts.email_tokens._send_resend_email")
+    def test_email_verification_accepts_valid_otp(self, send_email):
+        self.client.post(
+            reverse("email-verification-request"),
+            {"email": self.user.email},
+        )
+        self.user.refresh_from_db()
+
+        response = self.client.post(
+            reverse("email-verification-otp"),
+            {"email": self.user.email, "otp": self.user.email_verification_otp},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.email_verified)
+        self.assertEqual(self.user.email_verification_otp, "")
+
+
+@override_settings(PHONE_VERIFICATION_ENABLED=True)
+class PhoneVerificationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username="phone-user",
+            email="phone-user@example.com",
+            phone_number="0712345678",
+            password="Secure-phone-password-928!",
+            role=User.Role.CASHIER,
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def test_normalizes_kenyan_phone_numbers(self):
+        self.assertEqual(
+            normalize_kenyan_phone("0712345678"),
+            "+254712345678",
+        )
+        self.assertEqual(
+            normalize_kenyan_phone("+254712345678"),
+            "+254712345678",
+        )
+        self.assertEqual(
+            normalize_kenyan_phone("712345678"),
+            "+254712345678",
+        )
+
+    def test_valid_phone_otp_is_hashed_and_marks_verified(self):
+        otp = "123456"
+        self.user.phone_verification_otp_hash = hash_phone_otp(otp)
+        self.user.phone_verification_otp_expires_at = (
+            timezone.now() + timedelta(minutes=5)
+        )
+        self.user.save(update_fields=[
+            "phone_verification_otp_hash",
+            "phone_verification_otp_expires_at",
+        ])
+
+        response = self.client.post(
+            reverse("phone-verification-verify"),
+            {"otp": otp},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.phone_verified)
+        self.assertEqual(self.user.phone_verification_otp_hash, "")
+
+    def test_expired_phone_otp_is_rejected(self):
+        self.user.phone_verification_otp_hash = hash_phone_otp("123456")
+        self.user.phone_verification_otp_expires_at = (
+            timezone.now() - timedelta(seconds=1)
+        )
+        self.user.save(update_fields=[
+            "phone_verification_otp_hash",
+            "phone_verification_otp_expires_at",
+        ])
+
+        response = self.client.post(
+            reverse("phone-verification-verify"),
+            {"otp": "123456"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.phone_verified)
+
+    def test_five_incorrect_phone_attempts_are_limited(self):
+        self.user.phone_verification_otp_hash = hash_phone_otp("123456")
+        self.user.phone_verification_otp_expires_at = (
+            timezone.now() + timedelta(minutes=5)
+        )
+        self.user.phone_verification_attempts = 4
+        self.user.save(update_fields=[
+            "phone_verification_otp_hash",
+            "phone_verification_otp_expires_at",
+            "phone_verification_attempts",
+        ])
+
+        response = self.client.post(
+            reverse("phone-verification-verify"),
+            {"otp": "654321"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.phone_verified)
+        self.assertEqual(self.user.phone_verification_attempts, 5)
+
+
+@override_settings(PHONE_VERIFICATION_ENABLED=False)
+class DisabledPhoneVerificationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username="disabled-phone-user",
+            email="disabled-phone@example.com",
+            phone_number="0712345678",
+            password="Secure-disabled-phone-928!",
+            role=User.Role.CASHIER,
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def test_phone_send_is_disabled(self):
+        response = self.client.post(
+            reverse("phone-verification-send"),
+        )
+        self.assertEqual(response.status_code, 503)
+
+    def test_phone_verify_is_disabled(self):
+        response = self.client.post(
+            reverse("phone-verification-verify"),
+            {"otp": "123456"},
+        )
+        self.assertEqual(response.status_code, 503)
 
 
 @override_settings(

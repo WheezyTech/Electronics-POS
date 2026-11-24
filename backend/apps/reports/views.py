@@ -83,10 +83,24 @@ class DashboardOverviewAPIView(APIView):
         if error:
             return Response({"error": error}, status=400)
 
+        category_id = request.query_params.get("category")
+        sector = request.query_params.get("sector")
         sales = Sale.objects.filter(status=Sale.Status.COMPLETED)
         sales = apply_date_filter(
             sales, "completed_at", date_from, date_to
         )
+        if category_id:
+            sales = sales.filter(
+                items__product__category_id=category_id
+            ).distinct()
+        if sector == "ELECTRONICS":
+            sales = sales.exclude(
+                items__product__category__name__iregex=r".*(gas|lpg).*"
+            )
+        elif sector == "GAS_LPG":
+            sales = sales.filter(
+                items__product__category__name__iregex=r".*(gas|lpg).*"
+            ).distinct()
 
         completed_returns = SaleReturn.objects.filter(
             status=SaleReturn.Status.COMPLETED
@@ -94,10 +108,18 @@ class DashboardOverviewAPIView(APIView):
         completed_returns = apply_date_filter(
             completed_returns, "completed_at", date_from, date_to
         )
+        if category_id:
+            completed_returns = completed_returns.filter(
+                sale__items__product__category_id=category_id
+            ).distinct()
 
         sale_items = SaleItem.objects.filter(
             sale__in=sales
         )
+        if category_id:
+            sale_items = sale_items.filter(
+                product__category_id=category_id
+            )
 
         totals = sales.aggregate(
             sales_count=Count("id"),
@@ -264,9 +286,12 @@ class InventoryReportAPIView(APIView):
     permission_classes = [IsManagementUser]
 
     def get(self, request):
+        category_id = request.query_params.get("category")
         balances = StockBalance.objects.select_related(
             "product", "location"
         ).filter(product__is_active=True)
+        if category_id:
+            balances = balances.filter(product__category_id=category_id)
 
         valuation_expression = ExpressionWrapper(
             F("quantity_on_hand") * F("product__cost_price"),
@@ -282,15 +307,16 @@ class InventoryReportAPIView(APIView):
             units=Coalesce(Sum("quantity_on_hand"), ZERO),
             reserved=Coalesce(Sum("quantity_reserved"), ZERO),
         )
-        active_product_count = Product.objects.filter(
-            is_active=True
-        ).count()
+        active_products = Product.objects.filter(is_active=True)
+        if category_id:
+            active_products = active_products.filter(category_id=category_id)
+        active_product_count = active_products.count()
         stocked_product_ids = balances.filter(
             quantity_on_hand__gt=0
         ).values("product_id")
-        out_of_stock_count = Product.objects.filter(
-            is_active=True
-        ).exclude(id__in=stocked_product_ids).count()
+        out_of_stock_count = active_products.exclude(
+            id__in=stocked_product_ids
+        ).count()
 
         low_stock = balances.filter(
             quantity_on_hand__lte=F("quantity_reserved")

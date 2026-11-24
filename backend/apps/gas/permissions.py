@@ -24,4 +24,6 @@ class GasTransactionPermission(BasePermission):
             "ADMINISTRATOR",
             "STORE_MANAGER",
             "CASHIER",
+            "GAS_LPG_CASHIER",
+            "SUPERVISOR",
         )

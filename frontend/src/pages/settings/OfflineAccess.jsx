@@ -52,7 +52,7 @@ export default function OfflineAccess() {
           api.get("/auth/offline-authorizations/"),
         ]);
       const activeCashiers = getList(usersResponse.data).filter(
-        (user) => user.role === "CASHIER" && user.is_active
+        (user) => ["CASHIER", "ELECTRONICS_CASHIER", "GAS_LPG_CASHIER", "SUPERVISOR"].includes(user.role) && user.is_active
       );
       const activeDevices = getList(devicesResponse.data).filter(
         (device) => device.is_active

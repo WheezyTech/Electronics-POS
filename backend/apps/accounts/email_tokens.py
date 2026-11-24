@@ -1,5 +1,6 @@
 
 import json
+import random
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
@@ -72,12 +73,27 @@ def _send_resend_email(subject, message, recipient):
 
 
 def send_email_verification(user):
+    from django.utils import timezone
+    from datetime import timedelta
+
+    otp = f"{random.SystemRandom().randint(100000, 999999)}"
+    user.email_verification_otp = otp
+    user.email_verification_otp_expires_at = (
+        timezone.now() + timedelta(minutes=30)
+    )
+    user.save(update_fields=[
+        "email_verification_otp",
+        "email_verification_otp_expires_at",
+    ])
+
     token = email_verification_token.make_token(user)
     link = _account_link(user, "verify-email", token)
 
     message = (
         f"Hello {user.username},\n\n"
-        f"Verify your email address using this link:\n{link}\n\n"
+        f"Your verification OTP is: {otp}\n"
+        f"This code expires in 30 minutes.\n\n"
+        f"Or verify your email address using this link:\n{link}\n\n"
         "If you did not expect this message, contact your administrator."
     )
 

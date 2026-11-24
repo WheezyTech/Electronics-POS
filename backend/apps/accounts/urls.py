@@ -8,10 +8,13 @@ from .views import (
     DeviceTokenRefreshView,
     EmailVerificationView,
     EmailVerificationRequestView,
+    EmailOtpVerificationView,
     OfflineAuthorizationViewSet,
     PasswordResetConfirmView,
     PasswordResetRequestView,
     UserManagementViewSet,
+    PhoneVerificationSendView,
+    PhoneVerificationVerifyView,
 )
 
 
@@ -49,6 +52,11 @@ urlpatterns = [
         name='email-verification-request',
     ),
     path(
+        'email-verification/otp/',
+        EmailOtpVerificationView.as_view(),
+        name='email-verification-otp',
+    ),
+    path(
         'password-reset/',
         PasswordResetRequestView.as_view(),
         name='password-reset',
@@ -57,6 +65,16 @@ urlpatterns = [
         'password-reset/confirm/',
         PasswordResetConfirmView.as_view(),
         name='password-reset-confirm',
+    ),
+    path(
+        'phone-verification/send/',
+        PhoneVerificationSendView.as_view(),
+        name='phone-verification-send',
+    ),
+    path(
+        'phone-verification/verify/',
+        PhoneVerificationVerifyView.as_view(),
+        name='phone-verification-verify',
     ),
 
     path('', include(router.urls)),

@@ -75,6 +75,15 @@ class SaleViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
         user = self.request.user
+        role = getattr(user, "role", "")
+        if role == "ELECTRONICS_CASHIER":
+            queryset = queryset.exclude(
+                items__product__category__name__iregex=r".*(gas|lpg).*"
+            )
+        elif role == "GAS_LPG_CASHIER":
+            queryset = queryset.filter(
+                items__product__category__name__iregex=r".*(gas|lpg).*"
+            ).distinct()
 
         if not (
             user.is_superuser
@@ -103,6 +112,9 @@ class SaleViewSet(viewsets.ModelViewSet):
         return queryset
 
     def create(self, request, *args, **kwargs):
+        from apps.accounts.permissions import has_sector_access
+        if not has_sector_access(request.user, "ELECTRONICS"):
+            raise PermissionDenied("This account cannot create electronics sales.")
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         sale = serializer.save()
@@ -206,6 +218,12 @@ class SaleViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="items")
     def add_item(self, request, pk=None):
+        if (
+            getattr(request.user, "role", "") == "GAS_LPG_CASHIER"
+        ):
+            raise PermissionDenied(
+                "Gas and LPG cashiers cannot add electronics products."
+            )
         sale = self.get_object()
 
         serializer = SaleItemCreateSerializer(
@@ -697,7 +715,12 @@ class CashierShiftViewSet(viewsets.ModelViewSet):
         self._require_shift_manager()
         user_model = get_user_model()
         cashier_users = user_model.objects.filter(
-            role="CASHIER",
+            role__in=[
+                "CASHIER",
+                "ELECTRONICS_CASHIER",
+                "GAS_LPG_CASHIER",
+                "SUPERVISOR",
+            ],
             is_active=True,
         ).order_by("username")
 

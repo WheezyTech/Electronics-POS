@@ -74,8 +74,8 @@ async function fetchStoreData() {
 export default function StoreSetup() {
   const { user } = useAuth();
   const availableRoles = user?.role === "STORE_MANAGER"
-    ? ["CASHIER", "ACCOUNTANT", "AUDITOR"]
-    : ["STORE_MANAGER", "CASHIER", "ACCOUNTANT", "AUDITOR"];
+    ? ["CASHIER", "ELECTRONICS_CASHIER", "GAS_LPG_CASHIER", "SUPERVISOR", "ACCOUNTANT", "AUDITOR"]
+    : ["STORE_MANAGER", "CASHIER", "ELECTRONICS_CASHIER", "GAS_LPG_CASHIER", "SUPERVISOR", "ACCOUNTANT", "AUDITOR"];
   const [activeTab, setActiveTab] = useState("users");
   const [data, setData] = useState({
     users: [],
@@ -202,6 +202,47 @@ export default function StoreSetup() {
   const isUsersTab = activeTab === "users";
   const activeItems = data[activeTab];
 
+  const handleTeamMemberEmailAction = async (teamMember, action) => {
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await api.post(
+        `/auth/users/${teamMember.id}/${action}/`
+      );
+      if (action === "mark-email-verified") {
+        setData((previous) => ({
+          ...previous,
+          users: previous.users.map((member) =>
+            member.id === teamMember.id
+              ? {
+                  ...member,
+                  email_verified: true,
+                  email_verification_otp: "",
+                  email_verification_otp_expires_at: null,
+                }
+              : member
+          ),
+        }));
+      }
+      if (action === "mark-phone-verified") {
+        setData((previous) => ({
+          ...previous,
+          users: previous.users.map((member) =>
+            member.id === teamMember.id
+              ? { ...member, phone_verified: true }
+              : member
+          ),
+        }));
+      }
+      setMessage(response.data?.detail || "Email action completed.");
+    } catch (actionError) {
+      setError(getErrorMessage(actionError, "Unable to update email verification."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
@@ -274,7 +315,7 @@ export default function StoreSetup() {
           ) : isUsersTab ? (
             <div className="divide-y">
               {activeItems.map((teamMember) => (
-                <div key={teamMember.id} className="flex justify-between gap-4 py-3">
+                <div key={teamMember.id} className="flex flex-col justify-between gap-3 py-3 sm:flex-row sm:items-start">
                   <div>
                     <p className="font-medium text-gray-900">
                       {[teamMember.first_name, teamMember.last_name].filter(Boolean).join(" ") || teamMember.username}
@@ -283,16 +324,67 @@ export default function StoreSetup() {
                       {teamMember.email} · @{teamMember.username} · {teamMember.role}
                     </p>
                     <p className="text-xs text-gray-500">
-                      {teamMember.email_verified ? "Email verified" : "Email not verified"}
+                      Email: {teamMember.email_verified ? "Verified" : "Not verified"}
                     </p>
+                    <p className="text-xs text-gray-500">
+                      Phone: {teamMember.phone_verified ? "Verified" : "Not verified"}
+                    </p>
+                    {!teamMember.email_verified && teamMember.email_verification_otp && (
+                      <p className="mt-1 text-xs text-amber-700">
+                        OTP: <span className="font-mono font-bold">{teamMember.email_verification_otp}</span>
+                        {teamMember.email_verification_otp_expires_at
+                          ? ` · expires ${new Date(teamMember.email_verification_otp_expires_at).toLocaleString()}`
+                          : ""}
+                      </p>
+                    )}
                   </div>
-                  <span className={`h-fit rounded-full px-2.5 py-1 text-xs ${
-                    teamMember.is_active
-                      ? "bg-green-100 text-green-700"
-                      : "bg-gray-100 text-gray-600"
-                  }`}>
-                    {teamMember.is_active ? "Active" : "Inactive"}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`h-fit rounded-full px-2.5 py-1 text-xs ${
+                      teamMember.is_active
+                        ? "bg-green-100 text-green-700"
+                        : "bg-gray-100 text-gray-600"
+                    }`}>
+                      {teamMember.is_active ? "Active" : "Inactive"}
+                    </span>
+                    {!teamMember.email_verified && (
+                      <>
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={() =>
+                            handleTeamMemberEmailAction(teamMember, "resend-verification")
+                          }
+                          className="rounded-lg border px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                        >
+                          Resend OTP
+                        </button>
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={() =>
+                            handleTeamMemberEmailAction(teamMember, "mark-email-verified")
+                          }
+                          className="rounded-lg border border-green-200 px-3 py-2 text-xs font-medium text-green-700 hover:bg-green-50 disabled:opacity-50"
+                        >
+                          Mark verified
+                        </button>
+                      </>
+                    )}
+                    {!teamMember.phone_verified && teamMember.phone_number && (
+                      <>
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={() =>
+                            handleTeamMemberEmailAction(teamMember, "mark-phone-verified")
+                          }
+                          className="rounded-lg border border-green-200 px-3 py-2 text-xs font-medium text-green-700 hover:bg-green-50 disabled:opacity-50"
+                        >
+                          Approve phone
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

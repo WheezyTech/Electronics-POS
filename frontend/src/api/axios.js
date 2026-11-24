@@ -2,7 +2,7 @@ import axios from "axios";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
-  "https://electronics-pos-production.up.railway.app/api";
+  "https://api.electronicspos.shop/api";
 
 const api = axios.create({
   baseURL: API_BASE_URL,

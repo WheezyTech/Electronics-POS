@@ -123,6 +123,32 @@ export default function Inventory() {
     );
   });
 
+  const recordedProductIds = new Set(
+    balances.map((item) =>
+      String(
+        typeof item.product === "object"
+          ? item.product?.id
+          : item.product
+      )
+    )
+  );
+
+  const unrecordedProducts = products
+    .filter((product) => product.is_active !== false)
+    .filter((product) => !recordedProductIds.has(String(product.id)))
+    .filter((product) => {
+      const term = search.trim().toLowerCase();
+      if (!term) return true;
+
+      return (
+        product.name?.toLowerCase().includes(term) ||
+        product.sku?.toLowerCase().includes(term) ||
+        product.model_number?.toLowerCase().includes(term) ||
+        product.brand?.name?.toLowerCase().includes(term) ||
+        product.brand_name?.toLowerCase().includes(term)
+      );
+    });
+
   const totalUnits = balances.reduce(
     (sum, item) =>
       sum + Number(
@@ -154,6 +180,22 @@ export default function Inventory() {
     setForm({
       product: String(balance.product?.id ?? balance.product),
       location: String(balance.location?.id ?? balance.location),
+      destination_location: "",
+      quantity: "",
+      notes: "",
+    });
+    setError("");
+    setShowForm(true);
+  };
+
+  const openUnrecordedProduct = (product) => {
+    setAction("opening");
+    setOpeningProductSearch(
+      `${product.name}${product.sku ? ` (${product.sku})` : ""}`
+    );
+    setForm({
+      product: String(product.id),
+      location: locations.length === 1 ? String(locations[0].id) : "",
       destination_location: "",
       quantity: "",
       notes: "",
@@ -302,10 +344,20 @@ export default function Inventory() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl border bg-white p-5">
           <p className="text-sm text-gray-500">Stock Records</p>
           <h2 className="mt-2 text-2xl font-bold">{balances.length}</h2>
+        </div>
+
+        <div className="rounded-xl border bg-white p-5">
+          <p className="text-sm text-gray-500">Stock Not Recorded</p>
+          <h2 className="mt-2 text-2xl font-bold text-amber-600">
+            {products.filter((product) =>
+              product.is_active !== false &&
+              !recordedProductIds.has(String(product.id))
+            ).length}
+          </h2>
         </div>
 
         <div className="rounded-xl border bg-white p-5">
@@ -462,6 +514,73 @@ export default function Inventory() {
                     </tr>
                   );
                 })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="overflow-hidden rounded-xl border bg-white">
+        <div className="flex items-center justify-between border-b p-4">
+          <div>
+            <h2 className="font-semibold">Stock Not Recorded</h2>
+            <p className="mt-1 text-xs text-gray-500">
+              Registered active products without a stock balance
+            </p>
+          </div>
+          <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-700">
+            {unrecordedProducts.length}
+          </span>
+        </div>
+
+        {unrecordedProducts.length === 0 ? (
+          <p className="p-5 text-sm text-gray-500">
+            {search.trim()
+              ? "No unrecorded products match your search."
+              : "All registered active products have a stock balance."}
+          </p>
+        ) : (
+          <div className="responsive-table-wrap overflow-x-auto">
+            <table className="responsive-table w-full text-left text-sm">
+              <thead className="bg-gray-50 text-gray-500">
+                <tr>
+                  <th className="px-5 py-3">Product</th>
+                  <th className="px-5 py-3">SKU</th>
+                  <th className="px-5 py-3">Brand</th>
+                  <th className="px-5 py-3">Status</th>
+                  {canAdjustStock && <th className="px-5 py-3">Action</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {unrecordedProducts.map((product) => (
+                  <tr key={product.id} className="hover:bg-gray-50">
+                    <td data-label="Product" className="px-5 py-4 font-medium">
+                      {product.name}
+                    </td>
+                    <td data-label="SKU" className="px-5 py-4">
+                      {product.sku || "-"}
+                    </td>
+                    <td data-label="Brand" className="px-5 py-4">
+                      {product.brand?.name || product.brand_name || "-"}
+                    </td>
+                    <td data-label="Status" className="px-5 py-4">
+                      <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
+                        Not recorded
+                      </span>
+                    </td>
+                    {canAdjustStock && (
+                      <td data-label="Action" className="px-5 py-4">
+                        <button
+                          type="button"
+                          onClick={() => openUnrecordedProduct(product)}
+                          className="rounded-lg border border-blue-200 px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-50"
+                        >
+                          Enter Stock
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

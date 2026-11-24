@@ -22,21 +22,21 @@ import { useAuth } from "../context/AuthContext";
 import webLogo from "../../assets/branding/Electronics POS Web logo.png";
 
 const navigation = [
-  { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER"] },
-  { name: "Point of Sale", path: "/pos", icon: ShoppingCart, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER"] },
+  { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER", "ELECTRONICS_CASHIER", "GAS_LPG_CASHIER", "SUPERVISOR"] },
+  { name: "Point of Sale", path: "/pos", icon: ShoppingCart, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER", "ELECTRONICS_CASHIER", "SUPERVISOR"] },
   { name: "Products", path: "/products", icon: Package, roles: ["ADMINISTRATOR", "STORE_MANAGER"] },
   { name: "Barcodes", path: "/barcodes", icon: Barcode, roles: ["ADMINISTRATOR", "STORE_MANAGER"] },
   { name: "Inventory", path: "/inventory", icon: Warehouse, roles: ["ADMINISTRATOR", "STORE_MANAGER"] },
   { name: "Purchasing", path: "/purchasing", icon: Truck, roles: ["ADMINISTRATOR", "STORE_MANAGER"] },
-  { name: "Gas & LPG", path: "/gas", icon: Flame, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER"] },
-  { name: "Customers", path: "/customers", icon: Users, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER"] },
-  { name: "Sales", path: "/sales", icon: BarChart3, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER"] },
-  { name: "Returns", path: "/returns", icon: RotateCcw, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER"] },
-  { name: "Cashier Shifts", path: "/shifts", icon: Clock, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER"] },
+  { name: "Gas & LPG", path: "/gas", icon: Flame, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER", "GAS_LPG_CASHIER", "SUPERVISOR"] },
+  { name: "Customers", path: "/customers", icon: Users, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER", "ELECTRONICS_CASHIER", "GAS_LPG_CASHIER", "SUPERVISOR"] },
+  { name: "Sales", path: "/sales", icon: BarChart3, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER", "ELECTRONICS_CASHIER", "GAS_LPG_CASHIER", "SUPERVISOR"] },
+  { name: "Returns", path: "/returns", icon: RotateCcw, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER", "ELECTRONICS_CASHIER", "SUPERVISOR"] },
+  { name: "Cashier Shifts", path: "/shifts", icon: Clock, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER", "ELECTRONICS_CASHIER", "GAS_LPG_CASHIER", "SUPERVISOR"] },
   { name: "Reports", path: "/reports", icon: BarChart3, roles: ["ADMINISTRATOR", "STORE_MANAGER", "ACCOUNTANT", "AUDITOR"] },
   { name: "Store Setup", path: "/store-setup", icon: Settings, roles: ["ADMINISTRATOR", "STORE_MANAGER"] },
   { name: "Settings", path: "/settings", icon: Settings, roles: ["ADMINISTRATOR"] },
-  { name: "Cashier PIN", path: "/cashier-pin", icon: LockKeyhole, roles: ["CASHIER"] },
+  { name: "Cashier PIN", path: "/cashier-pin", icon: LockKeyhole, roles: ["CASHIER", "ELECTRONICS_CASHIER", "GAS_LPG_CASHIER", "SUPERVISOR"] },
   { name: "Configuration", path: "/configuration", icon: Settings, roles: ["ADMINISTRATOR"] },
   { name: "Offline Access", path: "/offline-access", icon: ShieldCheck, roles: ["ADMINISTRATOR"] },
 ];
@@ -108,7 +108,7 @@ export default function Sidebar({ mobileOpen = false, onMobileClose = () => {} }
           <p className="text-xs text-blue-100/75">{user?.role}</p>
         </div>
 
-        {user?.role === "CASHIER" && pinConfigured && (
+        {["CASHIER", "ELECTRONICS_CASHIER", "GAS_LPG_CASHIER", "SUPERVISOR"].includes(user?.role) && pinConfigured && (
           <button
             type="button"
             onClick={lockSession}

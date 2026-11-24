@@ -56,7 +56,7 @@ export function AuthProvider({ children }) {
       const profile = response.data.user ?? response.data;
       localStorage.setItem(CACHED_PROFILE_KEY, JSON.stringify(profile));
       setUser(profile);
-      const hasPin = profile.role === "CASHIER" && hasCashierPin(profile.id);
+      const hasPin = ["CASHIER", "ELECTRONICS_CASHIER", "GAS_LPG_CASHIER", "SUPERVISOR"].includes(profile.role) && hasCashierPin(profile.id);
       setPinConfigured(hasPin);
       if (restorePinLock) setIsLocked(hasPin);
       setIsOffline(false);
@@ -66,7 +66,7 @@ export function AuthProvider({ children }) {
         if (cachedProfile) {
           setUser(cachedProfile);
           const hasPin = (
-            cachedProfile.role === "CASHIER" &&
+            ["CASHIER", "ELECTRONICS_CASHIER", "GAS_LPG_CASHIER", "SUPERVISOR"].includes(cachedProfile.role) &&
             hasCashierPin(cachedProfile.id)
           );
           setPinConfigured(hasPin);
@@ -151,7 +151,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem(CACHED_PROFILE_KEY, JSON.stringify(userProfile));
     setUser(userProfile);
     setPinConfigured(
-      userProfile.role === "CASHIER" && hasCashierPin(userProfile.id)
+      ["CASHIER", "ELECTRONICS_CASHIER", "GAS_LPG_CASHIER", "SUPERVISOR"].includes(userProfile.role) && hasCashierPin(userProfile.id)
     );
     setIsLocked(false);
     setIsOffline(false);
@@ -170,7 +170,7 @@ export function AuthProvider({ children }) {
   };
 
   const configureCashierPin = async (pin) => {
-    if (!user || user.role !== "CASHIER") {
+    if (!user || !["CASHIER", "ELECTRONICS_CASHIER", "GAS_LPG_CASHIER", "SUPERVISOR"].includes(user.role)) {
       throw new Error("Only cashier accounts can configure a quick PIN.");
     }
     await saveCashierPin(user.id, pin);
@@ -223,6 +223,7 @@ export function AuthProvider({ children }) {
       configureCashierPin,
       lockSession,
       unlockWithPin,
+      loadUser,
     }}>
       {children}
     </AuthContext.Provider>

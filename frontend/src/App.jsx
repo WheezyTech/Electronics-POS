@@ -60,7 +60,7 @@ function App() {
               <Route
                 element={
                   <ProtectedRoute
-                    allowedRoles={["ADMINISTRATOR", "STORE_MANAGER", "CASHIER"]}
+                    allowedRoles={["ADMINISTRATOR", "STORE_MANAGER", "CASHIER", "ELECTRONICS_CASHIER", "GAS_LPG_CASHIER", "SUPERVISOR"]}
                   />
                 }
               >
@@ -69,11 +69,19 @@ function App() {
               <Route
                 element={
                   <ProtectedRoute
-                    allowedRoles={["ADMINISTRATOR", "STORE_MANAGER", "CASHIER"]}
+                    allowedRoles={["ADMINISTRATOR", "STORE_MANAGER", "CASHIER", "ELECTRONICS_CASHIER", "SUPERVISOR"]}
                   />
                 }
               >
                 <Route path="/pos" element={<POS />} />
+              </Route>
+              <Route
+                element={
+                  <ProtectedRoute
+                    allowedRoles={["ADMINISTRATOR", "STORE_MANAGER", "CASHIER", "ELECTRONICS_CASHIER", "GAS_LPG_CASHIER", "SUPERVISOR"]}
+                  />
+                }
+              >
                 <Route path="/sales" element={<Sales />} />
                 <Route path="/returns" element={<Returns />} />
                 <Route path="/shifts" element={<Shifts />} />
@@ -101,7 +109,7 @@ function App() {
                   <Route path="/store-setup" element={<StoreSetup />} />
                 </Route>
                 <Route
-                  element={<ProtectedRoute allowedRoles={["CASHIER"]} />}
+                  element={<ProtectedRoute allowedRoles={["CASHIER", "ELECTRONICS_CASHIER", "GAS_LPG_CASHIER", "SUPERVISOR"]} />}
                 >
                   <Route path="/cashier-pin" element={<CashierPin />} />
                 </Route>

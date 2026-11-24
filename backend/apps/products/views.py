@@ -141,6 +141,17 @@ class ProductViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
         location = self.request.query_params.get('location')
+        role = getattr(self.request.user, "role", "")
+        if role == "ELECTRONICS_CASHIER":
+            queryset = queryset.exclude(
+                Q(category__name__iregex=r".*(gas|lpg).*")
+                | Q(product_type__name__iregex=r".*(gas|lpg).*"),
+            )
+        elif role == "GAS_LPG_CASHIER":
+            queryset = queryset.filter(
+                Q(category__name__iregex=r".*(gas|lpg).*")
+                | Q(product_type__name__iregex=r".*(gas|lpg).*")
+            )
 
         if location:
             location_id = get_active_location_id(location)

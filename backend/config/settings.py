@@ -17,15 +17,6 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
-ALLOWED_HOSTS = [
-    host.strip()
-    for host in os.getenv(
-        "ALLOWED_HOSTS",
-        "localhost,127.0.0.1,192.168.1.165"
-    ).split(",")
-    if host.strip()
-]
-
 # Application definition
 
 INSTALLED_APPS = [
@@ -72,18 +63,21 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ALLOWED_HOSTS = [
+ALLOWED_HOSTS = sorted({
     host.strip()
-    for host in os.getenv(
-        "ALLOWED_HOSTS",
-        "localhost,127.0.0.1,192.168.1.165,electronics-pos-production.up.railway.app"
+    for host in (
+        "localhost,127.0.0.1,192.168.1.165,"
+        "electronics-pos-production.up.railway.app,api.electronicspos.shop,"
+        + os.getenv("ALLOWED_HOSTS", "")
     ).split(",")
     if host.strip()
-]
+})
 
 CSRF_TRUSTED_ORIGINS = [
     "https://electronics-pos-production.up.railway.app",
     "https://radiant-inspiration-production-77d51767.up.railway.app",
+    "https://electronicspos.shop",
+    "https://www.electronicspos.shop",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]
@@ -95,6 +89,8 @@ CORS_ALLOWED_ORIGINS = [
 
     # Production React frontend
     "https://radiant-inspiration-production-77d51767.up.railway.app",
+    "https://electronicspos.shop",
+    "https://www.electronicspos.shop",
 
     # Electron application and Capacitor Android WebView
     "null",
@@ -133,6 +129,8 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'email_verification': '10/hour',
         'password_reset': '5/hour',
+        'phone_verification': '10/hour',
+        'phone_verification_resend': '5/hour',
     },
 }
 
@@ -161,6 +159,13 @@ FRONTEND_URL = os.getenv(
     "FRONTEND_URL",
     "https://radiant-inspiration-production-77d51767.up.railway.app",
 ).rstrip("/")
+AFRICASTALKING_USERNAME = os.getenv("AFRICASTALKING_USERNAME", "")
+AFRICASTALKING_API_KEY = os.getenv("AFRICASTALKING_API_KEY", "")
+AFRICASTALKING_SENDER_ID = os.getenv("AFRICASTALKING_SENDER_ID", "")
+PHONE_VERIFICATION_ENABLED = os.getenv(
+    "PHONE_VERIFICATION_ENABLED",
+    "False",
+).lower() == "true"
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases

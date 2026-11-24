@@ -24,6 +24,8 @@ export default defineConfig(({ mode }) => ({
     host: "0.0.0.0",
     allowedHosts: [
       "radiant-inspiration-production-77d51767.up.railway.app",
+      "electronicspos.shop",
+      "www.electronicspos.shop",
     ],
   },
 }));

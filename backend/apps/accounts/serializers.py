@@ -14,6 +14,7 @@ from rest_framework import serializers
 
 from .authentication import get_active_device
 from .models import Device, OfflineAuthorization
+from .phone_verification import normalize_kenyan_phone
 
 
 User = get_user_model()
@@ -130,6 +131,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             'username': user.username,
             'email': user.email,
             'email_verified': user.email_verified,
+            'phone_verified': user.phone_verified,
             'first_name': user.first_name,
             'last_name': user.last_name,
             'phone_number': user.phone_number,
@@ -205,6 +207,8 @@ class UserManagementSerializer(serializers.ModelSerializer):
         required=True,
         validators=[validate_password]
     )
+    email_verification_otp = serializers.SerializerMethodField()
+    email_verification_otp_expires_at = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -223,6 +227,9 @@ class UserManagementSerializer(serializers.ModelSerializer):
             'is_superuser',
             'created_at',
             'email_verified',
+            'email_verification_otp',
+            'email_verification_otp_expires_at',
+            'phone_verified',
         ]
 
         read_only_fields = [
@@ -231,7 +238,26 @@ class UserManagementSerializer(serializers.ModelSerializer):
             'is_superuser',
             'created_at',
             'email_verified',
+            'phone_verified',
         ]
+
+    def get_email_verification_otp(self, user):
+        request = self.context.get('request')
+        if not request or not (
+            request.user.is_superuser
+            or request.user.role == User.Role.ADMINISTRATOR
+        ):
+            return ""
+        return user.email_verification_otp
+
+    def get_email_verification_otp_expires_at(self, user):
+        request = self.context.get('request')
+        if not request or not (
+            request.user.is_superuser
+            or request.user.role == User.Role.ADMINISTRATOR
+        ):
+            return None
+        return user.email_verification_otp_expires_at
 
     def validate_role(self, value):
         request = self.context.get('request')
@@ -240,6 +266,9 @@ class UserManagementSerializer(serializers.ModelSerializer):
             and request.user.role == User.Role.STORE_MANAGER
             and value not in {
                 User.Role.CASHIER,
+                User.Role.ELECTRONICS_CASHIER,
+                User.Role.GAS_LPG_CASHIER,
+                User.Role.SUPERVISOR,
                 User.Role.ACCOUNTANT,
                 User.Role.AUDITOR,
             }
@@ -255,6 +284,17 @@ class UserManagementSerializer(serializers.ModelSerializer):
 
         role = validated_data.get('role')
 
+        phone_number = validated_data.get('phone_number')
+        if phone_number:
+            try:
+                validated_data['phone_number'] = normalize_kenyan_phone(
+                    phone_number
+                )
+            except ValueError as error:
+                raise serializers.ValidationError(
+                    {"phone_number": str(error)}
+                )
+
         user = User(**validated_data)
 
         user.set_password(password)
@@ -268,6 +308,22 @@ class UserManagementSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         password = validated_data.pop('password', None)
+
+        phone_number = validated_data.get('phone_number')
+        if phone_number:
+            try:
+                validated_data['phone_number'] = normalize_kenyan_phone(
+                    phone_number
+                )
+            except ValueError as error:
+                raise serializers.ValidationError(
+                    {"phone_number": str(error)}
+                )
+            if validated_data['phone_number'] != instance.phone_number:
+                instance.phone_verified = False
+                instance.phone_verification_otp_hash = ""
+                instance.phone_verification_otp_expires_at = None
+                instance.phone_verification_attempts = 0
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
@@ -300,6 +356,7 @@ class MyProfileSerializer(serializers.ModelSerializer):
             'phone_number',
             'role',
             'email_verified',
+            'phone_verified',
             'offline_authorizations',
         ]
 
@@ -308,6 +365,7 @@ class MyProfileSerializer(serializers.ModelSerializer):
             'username',
             'role',
             'email_verified',
+            'phone_verified',
         ]
 
     def get_offline_authorizations(self, user):

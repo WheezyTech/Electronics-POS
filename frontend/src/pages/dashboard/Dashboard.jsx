@@ -265,10 +265,14 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [report, setReport] = useState(null);
   const [todayReport, setTodayReport] = useState(null);
+  const [todayElectronicsReport, setTodayElectronicsReport] = useState(null);
+  const [todayGasReport, setTodayGasReport] = useState(null);
   const [inventory, setInventory] = useState(null);
   const [customerCount, setCustomerCount] = useState(null);
   const [locations, setLocations] = useState([]);
   const [selectedLocation, setSelectedLocation] = useState("");
+  const [categories, setCategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState("");
   const [productSearch, setProductSearch] = useState("");
   const [productResults, setProductResults] = useState([]);
   const [productSearchLoading, setProductSearchLoading] = useState(false);
@@ -285,7 +289,11 @@ export default function Dashboard() {
   const [posError, setPosError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const isCashier = user?.role === "CASHIER";
+  const isCashier = [
+    "CASHIER",
+    "ELECTRONICS_CASHIER",
+    "GAS_LPG_CASHIER",
+  ].includes(user?.role);
   const todayKey = dateKey(new Date());
 
   useEffect(() => {
@@ -295,6 +303,7 @@ export default function Dashboard() {
     const params = {};
     if (dateFrom) params.date_from = dateFrom;
     if (dateTo) params.date_to = dateTo;
+    if (selectedCategory) params.category = selectedCategory;
 
     api.get("/reports/dashboard/", { params })
       .then((response) => {
@@ -319,14 +328,16 @@ export default function Dashboard() {
     return () => {
       active = false;
     };
-  }, [dateFrom, dateTo, isCashier, refreshKey]);
+  }, [dateFrom, dateTo, selectedCategory, isCashier, refreshKey]);
 
   useEffect(() => {
     if (isCashier) return undefined;
 
     let active = true;
+    const params = { date_from: todayKey, date_to: todayKey };
+    if (selectedCategory) params.category = selectedCategory;
     api.get("/reports/dashboard/", {
-      params: { date_from: todayKey, date_to: todayKey },
+      params,
     })
       .then((response) => {
         if (active) setTodayReport(response.data);
@@ -338,13 +349,58 @@ export default function Dashboard() {
     return () => {
       active = false;
     };
+  }, [isCashier, selectedCategory, refreshKey, todayKey]);
+
+  useEffect(() => {
+    if (isCashier) return undefined;
+
+    let active = true;
+    api.get("/reports/dashboard/", {
+      params: {
+        date_from: todayKey,
+        date_to: todayKey,
+        sector: "ELECTRONICS",
+      },
+    })
+      .then((response) => {
+        if (active) setTodayElectronicsReport(response.data);
+      })
+      .catch(() => {
+        if (active) setTodayElectronicsReport(null);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [isCashier, refreshKey, todayKey]);
 
   useEffect(() => {
     if (isCashier) return undefined;
 
     let active = true;
-    api.get("/reports/inventory/")
+    api.get("/gas/reports/", {
+      params: { date_from: todayKey, date_to: todayKey },
+    })
+      .then((response) => {
+        if (active) setTodayGasReport(response.data);
+      })
+      .catch(() => {
+        if (active) setTodayGasReport(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isCashier, refreshKey, todayKey]);
+
+  useEffect(() => {
+    if (isCashier) return undefined;
+
+    let active = true;
+    const inventoryParams = selectedCategory
+      ? { params: { category: selectedCategory } }
+      : undefined;
+    api.get("/reports/inventory/", inventoryParams)
       .then((response) => {
         if (active) {
           setInventory(response.data);
@@ -390,6 +446,26 @@ export default function Dashboard() {
     return () => {
       active = false;
     };
+  }, [isCashier, selectedCategory, refreshKey]);
+
+  useEffect(() => {
+    if (isCashier) return undefined;
+
+    let active = true;
+    api.get("/products/categories/")
+      .then((response) => {
+        if (!active) return;
+        setCategories(
+          getList(response.data).filter((category) => category.is_active)
+        );
+      })
+      .catch(() => {
+        if (active) setCategories([]);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [isCashier, refreshKey]);
 
   useEffect(() => {
@@ -426,6 +502,8 @@ export default function Dashboard() {
   useEffect(() => {
     let active = true;
     const query = productSearch.trim();
+    const params = { search: query, location: selectedLocation };
+    if (selectedCategory) params.category = selectedCategory;
     const timer = setTimeout(() => {
       if (!query || !selectedLocation) {
         setProductResults([]);
@@ -436,9 +514,7 @@ export default function Dashboard() {
 
       setProductSearchLoading(true);
       setProductSearchError("");
-      api.get("/products/products/", {
-        params: { search: query, location: selectedLocation },
-      })
+      api.get("/products/products/", { params })
         .then((response) => {
           if (active) setProductResults(getList(response.data));
         })
@@ -459,7 +535,7 @@ export default function Dashboard() {
       active = false;
       clearTimeout(timer);
     };
-  }, [productSearch, selectedLocation]);
+  }, [productSearch, selectedLocation, selectedCategory]);
 
   const sales = report?.sales || {};
   const dailySales = report?.daily_sales || [];
@@ -470,6 +546,15 @@ export default function Dashboard() {
     todayReport?.sales?.revenue ??
     dailySales.find((item) => item.date === todayKey)?.revenue ??
     0
+  );
+  const todayGasSales = (() => {
+    const daily = todayGasReport?.daily || {};
+    return Number(daily.refill_sales || 0)
+      + Number(daily.exchange_sales || 0)
+      + Number(daily.new_cylinder_sales_amount || 0);
+  })();
+  const electronicsTodaySales = Number(
+    todayElectronicsReport?.sales?.revenue ?? 0
   );
   const inventoryStock = inventory?.stock || {};
   const totalProducts =
@@ -632,6 +717,19 @@ export default function Dashboard() {
             ))}
           </select>
         </div>
+        <select
+          value={selectedCategory}
+          onChange={(event) => setSelectedCategory(event.target.value)}
+          aria-label="Filter overview by category"
+          className="max-w-40 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-blue-400"
+        >
+          <option value="">All categories</option>
+          {categories.map((category) => (
+            <option key={category.id} value={category.id}>
+              {category.name}
+            </option>
+          ))}
+        </select>
         <div className="hidden items-center gap-2 border-l border-slate-200 pl-3 sm:flex">
           <div className="grid h-9 w-9 place-items-center rounded-full bg-blue-100 text-sm font-bold text-blue-700">
             {(user?.first_name || user?.username || "U").slice(0, 1).toUpperCase()}
@@ -683,13 +781,27 @@ export default function Dashboard() {
           </div>
         )}
 
-        <section className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+        <section className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-5">
           <MetricCard
             label="Today's sales"
             value={loading && !todayReport ? "..." : money(todaySales)}
             detail="Net after approved refunds"
             icon={ShoppingBag}
             tone="bg-blue-100 text-blue-700"
+          />
+          <MetricCard
+            label="Today's electronics sales"
+            value={loading && !todayReport ? "..." : money(electronicsTodaySales)}
+            detail="Electronics and accessories"
+            icon={Package}
+            tone="bg-cyan-100 text-cyan-700"
+          />
+          <MetricCard
+            label="Today's Gas & LPG sales"
+            value={loading && !todayGasReport ? "..." : money(todayGasSales)}
+            detail="Refills, exchanges and cylinders"
+            icon={ShoppingBag}
+            tone="bg-orange-100 text-orange-700"
           />
           <MetricCard
             label="Total orders"

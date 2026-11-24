@@ -9,6 +9,8 @@ export default function VerifyEmail() {
   const [email, setEmail] = useState("");
   const [requestError, setRequestError] = useState("");
   const [requesting, setRequesting] = useState(false);
+  const [otp, setOtp] = useState("");
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
   const uid = searchParams.get("uid");
   const token = searchParams.get("token");
 
@@ -49,6 +51,23 @@ export default function VerifyEmail() {
     }
   };
 
+  const handleOtpVerification = async (event) => {
+    event.preventDefault();
+    setRequestError("");
+    setVerifyingOtp(true);
+    try {
+      await api.post("/auth/email-verification/otp/", { email, otp });
+      setStatus("verified");
+    } catch (error) {
+      setRequestError(
+        error.response?.data?.detail ||
+          "Unable to verify the email OTP."
+      );
+    } finally {
+      setVerifyingOtp(false);
+    }
+  };
+
   const messages = {
     verifying: "Verifying your email address...",
     verified: "Your email is verified. You can now use password reset.",
@@ -85,26 +104,55 @@ export default function VerifyEmail() {
           </p>
         )}
         {pageStatus === "request" && (
-          <form onSubmit={handleRequest} className="mt-5 space-y-4 text-left">
-            <label className="block text-sm font-medium text-slate-700">
-              Email address
-              <input
-                type="email"
-                required
-                autoComplete="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                className="mt-1 w-full rounded-lg border p-3"
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={requesting}
-              className="w-full rounded-lg bg-blue-600 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-            >
-              {requesting ? "Sending..." : "Send verification link"}
-            </button>
-          </form>
+          <div className="mt-5 space-y-5 text-left">
+            <form onSubmit={handleRequest} className="space-y-4">
+              <label className="block text-sm font-medium text-slate-700">
+                Email address
+                <input
+                  type="email"
+                  required
+                  autoComplete="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  className="mt-1 w-full rounded-lg border p-3"
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={requesting}
+                className="w-full rounded-lg bg-blue-600 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                {requesting ? "Sending..." : "Send verification link"}
+              </button>
+            </form>
+
+            <form onSubmit={handleOtpVerification} className="space-y-3 border-t pt-5">
+              <label className="block text-sm font-medium text-slate-700">
+                Verification OTP
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  required
+                  value={otp}
+                  onChange={(event) =>
+                    setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))
+                  }
+                  className="mt-1 w-full rounded-lg border p-3"
+                  placeholder="Enter 6-digit OTP"
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={verifyingOtp}
+                className="w-full rounded-lg border border-blue-600 py-3 font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-60"
+              >
+                {verifyingOtp ? "Verifying..." : "Verify OTP"}
+              </button>
+            </form>
+          </div>
         )}
         {!["verifying", "request"].includes(pageStatus) && (
           <Link
