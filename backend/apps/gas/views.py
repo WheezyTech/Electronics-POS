@@ -22,7 +22,11 @@ from .serializers import (
     GasRefillSerializer, GasExchangeSerializer, GasPurchaseSerializer,
     NewCylinderSaleSerializer,
 )
-from .permissions import GasAuthorizedPermission, GasTransactionPermission
+from .permissions import (
+    GasAuthorizedPermission,
+    GasPurchasePermission,
+    GasTransactionPermission,
+)
 from apps.inventory.models import StockMovement
 from apps.inventory.services import change_stock
 from apps.products.models import Product
@@ -374,7 +378,21 @@ class ExchangeViewSet(viewsets.ReadOnlyModelViewSet):
 class PurchaseViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = GasPurchase.objects.select_related("supplier", "location", "brand", "size")
     serializer_class = GasPurchaseSerializer
-    permission_classes = [IsAuthenticated, GasAuthorizedPermission]
+    permission_classes = [IsAuthenticated, GasPurchasePermission]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if not (
+            user.is_superuser
+            or getattr(user, "role", "") in {
+                "ADMINISTRATOR",
+                "STORE_MANAGER",
+                "SUPERVISOR",
+            }
+        ):
+            queryset = queryset.filter(recorded_by=user)
+        return queryset
 
     @action(detail=False, methods=["post"])
     @transaction.atomic
@@ -396,6 +414,18 @@ class PurchaseViewSet(viewsets.ReadOnlyModelViewSet):
             raise ValidationError("Purchase quantities and price must be valid.")
         if full_quantity == 0 and empty_quantity == 0:
             raise ValidationError("Receive at least one full or empty cylinder.")
+        if empty_quantity:
+            stock = GasStock.objects.filter(
+                location=location,
+                brand=brand,
+                size=size,
+            ).select_for_update().first()
+            available_empty = stock.empty_quantity if stock else 0
+            if empty_quantity > available_empty:
+                raise ValidationError(
+                    f"Cannot return {empty_quantity} empty cylinders. "
+                    f"Only {available_empty} are available."
+                )
         tx_reference = reference("GP")
         purchase = GasPurchase.objects.create(
             reference=tx_reference,

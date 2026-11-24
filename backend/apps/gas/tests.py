@@ -5,11 +5,13 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from apps.inventory.models import StockBalance, StockLocation, StockMovement
+from apps.purchases.models import Supplier
 from apps.products.models import Category, Product, Unit
 from .models import (
     GasBrand,
     GasCylinderSize,
     GasExchange,
+    GasPurchase,
     GasRefill,
     GasStock,
     GasStockMovement,
@@ -171,6 +173,85 @@ class GasExchangeTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertFalse(GasStock.objects.exists())
+
+    def test_gas_cashier_receives_full_and_returns_empty_stock(self):
+        from apps.purchases.models import Supplier
+
+        self.user.role = "GAS_LPG_CASHIER"
+        self.user.save(update_fields=["role"])
+        supplier = Supplier.objects.create(
+            name="Gas Supplier",
+            phone_number="0700000000",
+        )
+        stock = GasStock.objects.create(
+            location=self.location,
+            brand=self.brand,
+            size=self.size,
+            full_quantity=2,
+            empty_quantity=5,
+        )
+
+        response = self.client.post(
+            "/api/gas/purchases/create_purchase/",
+            {
+                "location": self.location.pk,
+                "supplier": supplier.pk,
+                "brand": self.brand.pk,
+                "size": self.size.pk,
+                "full_cylinders_received": 3,
+                "empty_cylinders_returned": 2,
+                "purchase_price": "9000.00",
+                "delivery_date": "2026-11-24",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        stock.refresh_from_db()
+        self.assertEqual(stock.full_quantity, 5)
+        self.assertEqual(stock.empty_quantity, 3)
+        movements = {
+            movement.cylinder_status: movement.quantity_delta
+            for movement in GasStockMovement.objects.filter(
+                reference=response.data["reference"]
+            )
+        }
+        self.assertEqual(movements, {"FULL": 3, "EMPTY": -2})
+
+    def test_gas_purchase_rejects_return_above_available_empty_stock(self):
+        supplier = Supplier.objects.create(
+            name="Gas Supplier",
+            phone_number="0700000000",
+        )
+        stock = GasStock.objects.create(
+            location=self.location,
+            brand=self.brand,
+            size=self.size,
+            full_quantity=2,
+            empty_quantity=1,
+        )
+
+        response = self.client.post(
+            "/api/gas/purchases/create_purchase/",
+            {
+                "location": self.location.pk,
+                "supplier": supplier.pk,
+                "brand": self.brand.pk,
+                "size": self.size.pk,
+                "full_cylinders_received": 3,
+                "empty_cylinders_returned": 2,
+                "purchase_price": "9000.00",
+                "delivery_date": "2026-11-24",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        stock.refresh_from_db()
+        self.assertEqual(stock.full_quantity, 2)
+        self.assertEqual(stock.empty_quantity, 1)
+        self.assertEqual(GasPurchase.objects.count(), 0)
+        self.assertFalse(GasStockMovement.objects.exists())
 
     def test_refill_can_receive_customer_brand_and_issue_another_brand(self):
         customer_brand = GasBrand.objects.create(name="Rubis")

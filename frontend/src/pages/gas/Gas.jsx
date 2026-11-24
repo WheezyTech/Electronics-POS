@@ -64,6 +64,7 @@ const buildGasReceipt = (transaction, label) => {
 export default function Gas() {
   const { user } = useAuth();
   const canManageGas = user?.is_superuser || ["ADMINISTRATOR", "STORE_MANAGER"].includes(user?.role);
+  const canReceiveGas = canManageGas || ["SUPERVISOR", "GAS_LPG_CASHIER", "CASHIER"].includes(user?.role);
   const [tab, setTab] = useState("overview");
   const [brands, setBrands] = useState([]);
   const [sizes, setSizes] = useState([]);
@@ -210,7 +211,11 @@ export default function Gas() {
     ["overview", "Overview"], ["refill", "Gas refill"], ["exchange", "Empty exchange"],
     ["sale", "New cylinder sale"], ["purchase", "Gas purchase"], ["stock", "Record stock"],
     ["sales", "Sales history"], ["setup", "Brands & sizes"],
-  ].filter(([id]) => canManageGas || !["purchase", "stock", "setup"].includes(id));
+  ].filter(([id]) =>
+    id === "purchase"
+      ? canReceiveGas
+      : canManageGas || !["stock", "setup"].includes(id)
+  );
 
   return (
     <div className="space-y-6">
@@ -436,6 +441,9 @@ export default function Gas() {
 
       {tab === "purchase" && (
         <Card title="Record gas purchase">
+          <p className="mb-4 text-sm text-slate-600">
+            Receive full cylinders from the supplier. When empty cylinders are returned to the supplier, their quantity is automatically removed from empty stock. Full stock increases and cannot become negative.
+          </p>
           <form onSubmit={(e) => { e.preventDefault(); create("/gas/purchases/create_purchase/", purchase, "Gas purchase recorded."); }} className="grid gap-3 md:grid-cols-3">
             <Select value={purchase.location} onChange={(v) => setPurchase({...purchase, location: v})} label="Destination" options={locations.map(x => [x.id, x.name])}/>
             <Select value={purchase.supplier} onChange={(v) => setPurchase({...purchase, supplier: v})} label="Supplier" options={suppliers.map(x => [x.id, x.name])}/>
