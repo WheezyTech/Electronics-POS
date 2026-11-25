@@ -15,33 +15,59 @@ from .models import (
 )
 
 
+class GasAdmin(admin.ModelAdmin):
+    def has_module_permission(self, request):
+        return (
+            request.user.is_superuser
+            or getattr(request.user, "role", None) == "ADMINISTRATOR"
+            or super().has_module_permission(request)
+        )
+
+    def has_view_permission(self, request, obj=None):
+        return (
+            request.user.is_superuser
+            or getattr(request.user, "role", None) == "ADMINISTRATOR"
+            or super().has_view_permission(request, obj)
+        )
+
+    def has_add_permission(self, request):
+        return (
+            request.user.is_superuser
+            or getattr(request.user, "role", None) == "ADMINISTRATOR"
+            or super().has_add_permission(request)
+        )
+
+    def has_change_permission(self, request, obj=None):
+        return (
+            request.user.is_superuser
+            or getattr(request.user, "role", None) == "ADMINISTRATOR"
+            or super().has_change_permission(request, obj)
+        )
+
+    def has_delete_permission(self, request, obj=None):
+        return (
+            request.user.is_superuser
+            or getattr(request.user, "role", None) == "ADMINISTRATOR"
+            or super().has_delete_permission(request, obj)
+        )
+
+
 @admin.register(GasBrand)
-class GasBrandAdmin(admin.ModelAdmin):
+class GasBrandAdmin(GasAdmin):
     list_display = ("name", "is_active", "created_at")
     list_filter = ("is_active",)
     search_fields = ("name", "compliance_details")
 
 
 @admin.register(GasCylinderSize)
-class GasCylinderSizeAdmin(admin.ModelAdmin):
+class GasCylinderSizeAdmin(GasAdmin):
     list_display = ("name", "weight_kg", "is_active")
     list_filter = ("is_active",)
     search_fields = ("name",)
 
 
-class ReadOnlyGasRecordAdmin(admin.ModelAdmin):
-    def get_readonly_fields(self, request, obj=None):
-        return tuple(field.name for field in self.model._meta.concrete_fields)
-
-    def has_add_permission(self, request):
-        return False
-
-    def has_delete_permission(self, request, obj=None):
-        return False
-
-
 @admin.register(GasCylinder)
-class GasCylinderAdmin(ReadOnlyGasRecordAdmin):
+class GasCylinderAdmin(GasAdmin):
     list_display = (
         "serial_number",
         "brand",
@@ -56,7 +82,7 @@ class GasCylinderAdmin(ReadOnlyGasRecordAdmin):
 
 
 @admin.register(GasStock)
-class GasStockAdmin(ReadOnlyGasRecordAdmin):
+class GasStockAdmin(GasAdmin):
     list_display = (
         "location",
         "brand",
@@ -70,7 +96,7 @@ class GasStockAdmin(ReadOnlyGasRecordAdmin):
 
 
 @admin.register(GasStockMovement)
-class GasStockMovementAdmin(ReadOnlyGasRecordAdmin):
+class GasStockMovementAdmin(GasAdmin):
     list_display = (
         "created_at",
         "movement_type",
@@ -88,7 +114,7 @@ class GasStockMovementAdmin(ReadOnlyGasRecordAdmin):
 
 
 @admin.register(CylinderDeposit)
-class CylinderDepositAdmin(ReadOnlyGasRecordAdmin):
+class CylinderDepositAdmin(GasAdmin):
     list_display = (
         "reference",
         "customer_name",
@@ -105,7 +131,7 @@ class CylinderDepositAdmin(ReadOnlyGasRecordAdmin):
 
 
 @admin.register(GasRefill)
-class GasRefillAdmin(ReadOnlyGasRecordAdmin):
+class GasRefillAdmin(GasAdmin):
     list_display = (
         "reference",
         "created_at",
@@ -128,7 +154,7 @@ class GasRefillAdmin(ReadOnlyGasRecordAdmin):
 
 
 @admin.register(GasExchange)
-class GasExchangeAdmin(ReadOnlyGasRecordAdmin):
+class GasExchangeAdmin(GasAdmin):
     list_display = (
         "reference",
         "created_at",
@@ -151,7 +177,7 @@ class GasExchangeAdmin(ReadOnlyGasRecordAdmin):
 
 
 @admin.register(GasPurchase)
-class GasPurchaseAdmin(ReadOnlyGasRecordAdmin):
+class GasPurchaseAdmin(GasAdmin):
     list_display = (
         "reference",
         "delivery_date",
@@ -169,7 +195,7 @@ class GasPurchaseAdmin(ReadOnlyGasRecordAdmin):
 
 
 @admin.register(NewCylinderSale)
-class NewCylinderSaleAdmin(ReadOnlyGasRecordAdmin):
+class NewCylinderSaleAdmin(GasAdmin):
     list_display = (
         "reference",
         "created_at",
@@ -193,6 +219,6 @@ class NewCylinderSaleAdmin(ReadOnlyGasRecordAdmin):
 
 
 @admin.register(NewCylinderSaleAccessory)
-class NewCylinderSaleAccessoryAdmin(ReadOnlyGasRecordAdmin):
+class NewCylinderSaleAccessoryAdmin(GasAdmin):
     list_display = ("sale", "product", "quantity", "unit_price", "line_total")
     search_fields = ("sale__reference", "product__name")
