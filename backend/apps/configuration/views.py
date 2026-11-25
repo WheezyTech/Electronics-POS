@@ -92,8 +92,8 @@ class ApplicationUpdatesAPIView(APIView):
     def get(self, request):
         return Response({
             "android": {
-                "latest_version": os.getenv("ANDROID_LATEST_VERSION", "1.0.6"),
-                "latest_version_code": int(os.getenv("ANDROID_LATEST_VERSION_CODE", "7")),
+                "latest_version": os.getenv("ANDROID_LATEST_VERSION", "1.0.7"),
+                "latest_version_code": int(os.getenv("ANDROID_LATEST_VERSION_CODE", "8")),
                 "download_url": os.getenv(
                     "ANDROID_APK_DOWNLOAD_URL",
                     "https://electronicspos.shop/downloads/electronics-pos.apk",
@@ -105,7 +105,7 @@ class ApplicationUpdatesAPIView(APIView):
                 "mandatory": os.getenv("ANDROID_UPDATE_MANDATORY", "False").lower() == "true",
             },
             "windows": {
-                "latest_version": os.getenv("WINDOWS_LATEST_VERSION", "1.0.6"),
+                "latest_version": os.getenv("WINDOWS_LATEST_VERSION", "1.0.7"),
                 "download_url": os.getenv(
                     "WINDOWS_UPDATE_URL",
                     "https://radiant-inspiration-production-77d51767.up.railway.app/downloads",

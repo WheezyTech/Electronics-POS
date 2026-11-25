@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   LockKeyhole,
   Flame,
+  Download,
 } from "lucide-react";
 
 import { useAuth } from "../context/AuthContext";
@@ -103,6 +104,20 @@ export default function Sidebar({ mobileOpen = false, onMobileClose = () => {} }
       </nav>
 
       <div className="border-t border-blue-500/30 p-4">
+        <NavLink
+          to="/updates"
+          onClick={onMobileClose}
+          className={({ isActive }) =>
+            `mb-3 flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-semibold ${
+              isActive
+                ? "bg-white/20 text-white"
+                : "bg-white/10 text-blue-50 hover:bg-white/20"
+            }`
+          }
+        >
+          <Download size={18} />
+          Check for Updates
+        </NavLink>
         <div className="mb-3">
           <p className="text-sm font-semibold">{user?.username}</p>
           <p className="text-xs text-blue-100/75">{user?.role}</p>

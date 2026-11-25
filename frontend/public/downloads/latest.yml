@@ -1,8 +1,8 @@
-version: 1.0.6
+version: 1.0.7
 files:
-  - url: Electronics POS Setup-1.0.6.exe
-    sha512: Mym9/bjOp+wcMWWf7LYX2ltL1a4kUakaFqlH6fUpgfkfu/zgXSZ2GqX5IgJzmjIdkm7OTEcTcdqB6FB5+zDKcw==
-    size: 128725319
-path: Electronics POS Setup-1.0.6.exe
-sha512: Mym9/bjOp+wcMWWf7LYX2ltL1a4kUakaFqlH6fUpgfkfu/zgXSZ2GqX5IgJzmjIdkm7OTEcTcdqB6FB5+zDKcw==
-releaseDate: '2026-11-25T09:29:05.782Z'
+  - url: Electronics POS Setup-1.0.7.exe
+    sha512: 0/jrmij6Mvml9Tc/giUgE8QL3cAeAuO0Ls8d2s2T+nAOnTGyE1L+WwWJfiKPSgkkgEiekSeSj1jMUitgp3hsYw==
+    size: 128726102
+path: Electronics POS Setup-1.0.7.exe
+sha512: 0/jrmij6Mvml9Tc/giUgE8QL3cAeAuO0Ls8d2s2T+nAOnTGyE1L+WwWJfiKPSgkkgEiekSeSj1jMUitgp3hsYw==
+releaseDate: '2026-11-25T11:33:42.390Z'

@@ -1,6 +1,6 @@
 
 import { app, BrowserWindow, ipcMain, shell } from "electron";
-import { autoUpdater } from "electron-updater";
+import updaterPackage from "electron-updater";
 import net from "node:net";
 import { Buffer } from "node:buffer";
 import path from "node:path";
@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 let mainWindow;
+const { autoUpdater } = updaterPackage;
 
 ipcMain.on("app:version", (event) => {
   event.returnValue = app.getVersion();

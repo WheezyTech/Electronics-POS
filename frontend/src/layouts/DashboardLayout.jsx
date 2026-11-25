@@ -41,6 +41,10 @@ export default function DashboardLayout() {
         <div className="min-w-0 px-3 py-4 sm:px-5 md:px-6 md:py-6 lg:px-8">
           <Outlet />
         </div>
+        <footer className="border-t border-slate-200 bg-white px-4 py-3 text-center text-xs text-slate-500">
+          © {new Date().getFullYear()} Electronics POS. ICT powered by Wheezy
+          Systems and Innovation.
+        </footer>
       </main>
     </div>
   );

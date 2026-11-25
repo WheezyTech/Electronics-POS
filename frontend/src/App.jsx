@@ -29,6 +29,7 @@ import Settings from "./pages/settings/Settings";
 import StoreSetup from "./pages/settings/StoreSetup";
 import OfflineAccess from "./pages/settings/OfflineAccess";
 import CashierPin from "./pages/settings/CashierPin";
+import AppUpdates from "./pages/settings/AppUpdates";
 import Gas from "./pages/gas/Gas";
 import PublicLayout from "./layouts/PublicLayout";
 import Home from "./pages/public/Home";
@@ -57,6 +58,7 @@ function App() {
 
           <Route element={<ProtectedRoute />}>
             <Route element={<DashboardLayout />}>
+              <Route path="/updates" element={<AppUpdates />} />
               <Route
                 element={
                   <ProtectedRoute

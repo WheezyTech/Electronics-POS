@@ -67,6 +67,10 @@ export default function PublicLayout() {
             <a className="mt-1 block text-green-300" href="/downloads/electronics-pos.apk">Android app</a>
           </div>
         </div>
+        <div className="border-t border-slate-800 px-4 py-4 text-center text-xs text-slate-400">
+          © {new Date().getFullYear()} Electronics POS. ICT powered by Wheezy
+          Systems and Innovation.
+        </div>
       </footer>
     </div>
   );
