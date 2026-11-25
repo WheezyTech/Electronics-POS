@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Printer, X } from "lucide-react";
+import { CheckCircle2, Printer, RefreshCw, X } from "lucide-react";
 import QRCode from "qrcode";
 import {
   getPairedBluetoothPrinters,
@@ -44,11 +44,13 @@ async function getReceiptLogoBase64() {
 
 function thermalReceiptText(sale) {
   const status =
-    sale.sync_status === "PENDING" ? "PENDING SYNC" : "SYNCHRONIZED";
+    sale.sync_status === "PENDING"
+      ? "SAVED OFFLINE - SYNC PENDING"
+      : "CLOUD BACKUP COMPLETE";
   const lines = [
     "SALES RECEIPT",
     `Receipt: ${sale.reference}`,
-    `Sync status: ${status}`,
+    `Status: ${status}`,
     dateTime(
       sale.client_completed_at || sale.completed_at || sale.created_at
     ),
@@ -87,6 +89,7 @@ function thermalReceiptText(sale) {
 }
 
 export default function ReceiptPreview({ sale, onClose, autoPrint = false }) {
+  const syncPending = sale.sync_status === "PENDING";
   const [pairedPrinters, setPairedPrinters] = useState([]);
   const [printerTransport, setPrinterTransport] = useState(
     () => localStorage.getItem("receipt_printer_transport") || "network"
@@ -285,17 +288,18 @@ export default function ReceiptPreview({ sale, onClose, autoPrint = false }) {
             <p className="text-sm text-slate-500">
               {sale.reference}
             </p>
-            <p
-              className={`text-xs font-semibold ${
-                sale.sync_status === "PENDING"
-                  ? "text-amber-700"
-                  : "text-emerald-700"
+            <span
+              className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                syncPending
+                  ? "bg-amber-50 text-amber-800"
+                  : "bg-emerald-50 text-emerald-700"
               }`}
             >
-              {sale.sync_status === "PENDING"
-                ? "Pending synchronization"
-                : "Synchronized"}
-            </p>
+              {syncPending ? <RefreshCw size={13} /> : <CheckCircle2 size={13} />}
+              {syncPending
+                ? "Saved offline · sync pending"
+                : "Cloud backup complete"}
+            </span>
           </div>
 
           <div className="flex gap-2">
@@ -443,9 +447,9 @@ export default function ReceiptPreview({ sale, onClose, autoPrint = false }) {
               )}
             </p>
             <p className="font-bold">
-              {sale.sync_status === "PENDING"
-                ? "PENDING SYNCHRONIZATION"
-                : "SYNCHRONIZED"}
+              {syncPending
+                ? "SAVED OFFLINE - SYNC PENDING"
+                : "CLOUD BACKUP COMPLETE"}
             </p>
           </div>
 

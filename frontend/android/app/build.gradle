@@ -1,5 +1,20 @@
 apply plugin: 'com.android.application'
 
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { stream ->
+        keystoreProperties.load(stream)
+    }
+}
+
+def releaseSigningConfigured = [
+    'storeFile',
+    'storePassword',
+    'keyAlias',
+    'keyPassword',
+].every { keystoreProperties.getProperty(it) }
+
 android {
     namespace = "ke.co.wheezysystems.electronicpos"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +22,8 @@ android {
         applicationId "ke.co.wheezysystems.electronicpos"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 8
-        versionName "1.0.7"
+        versionCode 9
+        versionName "1.0.8"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,9 +31,22 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            release {
+                storeFile file(keystoreProperties.getProperty('storeFile'))
+                storePassword keystoreProperties.getProperty('storePassword')
+                keyAlias keystoreProperties.getProperty('keyAlias')
+                keyPassword keystoreProperties.getProperty('keyPassword')
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
+            if (releaseSigningConfigured) {
+                signingConfig signingConfigs.release
+            }
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
@@ -43,6 +71,27 @@ dependencies {
 }
 
 apply from: 'capacitor.build.gradle'
+
+def validateReleaseSigning = tasks.register('validateReleaseSigning') {
+    doLast {
+        if (!releaseSigningConfigured) {
+            throw new GradleException(
+                'Android release signing is not configured. Run setup-release-signing.ps1 first.'
+            )
+        }
+        if (!file(keystoreProperties.getProperty('storeFile')).isFile()) {
+            throw new GradleException(
+                'The Android release keystore configured in keystore.properties does not exist.'
+            )
+        }
+    }
+}
+
+tasks.configureEach { task ->
+    if (task.name == 'packageRelease' || task.name == 'bundleRelease') {
+        task.dependsOn(validateReleaseSigning)
+    }
+}
 
 try {
     def servicesJSON = file('google-services.json')
