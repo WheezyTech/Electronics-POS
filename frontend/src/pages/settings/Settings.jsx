@@ -1,6 +1,27 @@
 
 import { useEffect, useState } from "react";
+import axios from "axios";
 import api from "../../api/axios";
+import {
+  downloadAndInstallAndroidUpdate,
+  getAndroidAppVersion,
+  isAndroidNative,
+} from "../../api/appUpdates";
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  "https://api.electronicspos.shop/api";
+
+const compareVersions = (left, right) => {
+  const leftParts = String(left).split(".").map(Number);
+  const rightParts = String(right).split(".").map(Number);
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = (leftParts[index] || 0) - (rightParts[index] || 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+};
 
 export default function Settings() {
   const [settings, setSettings] = useState({
@@ -22,12 +43,110 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [updateStatus, setUpdateStatus] = useState("Checking...");
+  const [updateInfo, setUpdateInfo] = useState(null);
+  const [installedVersion, setInstalledVersion] = useState("");
+  const [updating, setUpdating] = useState(false);
+  const [updateMessage, setUpdateMessage] = useState("");
 
   useEffect(() => {
     fetchSettings();
+    checkForUpdates();
   }, []);
 
-  const fetchSettings = async () => {
+  useEffect(() => {
+    if (!window.electronAPI?.onUpdateStatus) return undefined;
+    return window.electronAPI.onUpdateStatus((status) => {
+      if (status.state === "checking") setUpdateStatus("Checking for updates...");
+      if (status.state === "available") {
+        setUpdateStatus(`Update ${status.version} is available`);
+        setUpdateInfo((previous) => ({ ...previous, available: true, version: status.version }));
+      }
+      if (status.state === "current") setUpdateStatus("You are using the latest version.");
+      if (status.state === "downloading") setUpdateStatus(`Downloading update: ${status.percent}%`);
+      if (status.state === "downloaded") {
+        setUpdateStatus("Update downloaded. Ready to install.");
+        setUpdateInfo((previous) => ({ ...previous, downloaded: true }));
+      }
+      if (status.state === "error") setUpdateStatus(status.message || "Update check failed.");
+    });
+  }, []);
+
+  async function checkForUpdates() {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/configuration/updates/`);
+      const updates = response.data;
+      if (isAndroidNative()) {
+        const versionInfo = await getAndroidAppVersion();
+        setInstalledVersion(versionInfo.version);
+        const androidUpdate = updates.android;
+        const available = (
+          Number(androidUpdate.latest_version_code) >
+          Number(versionInfo.versionCode)
+        ) || compareVersions(androidUpdate.latest_version, versionInfo.version) > 0;
+        setUpdateInfo({ ...androidUpdate, available });
+        setUpdateStatus(
+          available
+            ? `Android update ${androidUpdate.latest_version} is available`
+            : "You are using the latest Android version."
+        );
+      } else if (window.electronAPI) {
+        setInstalledVersion(window.electronAPI.getAppVersion());
+        setUpdateInfo({ ...updates.windows, available: null });
+        setUpdateStatus("Click Check for Updates.");
+        await window.electronAPI.checkForUpdates();
+      } else {
+        setInstalledVersion("Web");
+        setUpdateInfo(updates.windows);
+        setUpdateStatus("The website updates automatically.");
+      }
+    } catch (err) {
+      setUpdateStatus(
+        err.response?.data?.detail || "Unable to check for updates."
+      );
+    }
+  }
+
+  const handleUpdate = async () => {
+    setUpdating(true);
+    setUpdateMessage("");
+    try {
+      if (isAndroidNative()) {
+        if (!updateInfo?.available) {
+          setUpdateMessage("The Android app is already up to date.");
+          return;
+        }
+        await downloadAndInstallAndroidUpdate(updateInfo.download_url);
+        setUpdateMessage("The Android installer has opened.");
+      } else if (window.electronAPI) {
+        if (updateInfo?.downloaded) {
+          await window.electronAPI.installUpdate();
+        } else {
+          await window.electronAPI.downloadUpdate();
+        }
+      }
+    } catch (err) {
+      setUpdateMessage(
+        err.message || "The update could not be started."
+      );
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleDesktopDownload = async () => {
+    setUpdating(true);
+    setUpdateMessage("");
+    try {
+      await window.electronAPI.downloadUpdate();
+    } catch (err) {
+      setUpdateMessage(err.message || "Unable to download the update.");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  async function fetchSettings() {
     try {
       const response = await api.get("/configuration/settings/");
       setSettings((prev) => ({ ...prev, ...response.data }));
@@ -39,7 +158,7 @@ export default function Settings() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -94,6 +213,58 @@ export default function Settings() {
           {error}
         </div>
       )}
+
+      <section className="max-w-3xl rounded-xl border border-blue-100 bg-white p-6 shadow">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold">Application Updates</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Installed version: {installedVersion || "Checking..."}
+            </p>
+            <p className="mt-2 text-sm font-medium text-blue-700">
+              {updateStatus}
+            </p>
+            {updateInfo?.release_notes && (
+              <p className="mt-2 text-sm text-gray-600">
+                {updateInfo.release_notes}
+              </p>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={checkForUpdates}
+              disabled={updating}
+              className="rounded-lg border border-blue-600 px-4 py-2 text-sm font-semibold text-blue-700 disabled:opacity-50"
+            >
+              Check for Updates
+            </button>
+            {(isAndroidNative() || window.electronAPI) && (
+              <button
+                type="button"
+                onClick={handleUpdate}
+                disabled={updating}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {updating ? "Updating..." : "Update Now"}
+              </button>
+            )}
+          </div>
+        </div>
+        {window.electronAPI && updateStatus.startsWith("Update ") && (
+          <button
+            type="button"
+            onClick={handleDesktopDownload}
+            disabled={updating}
+            className="mt-4 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold disabled:opacity-50"
+          >
+            Download Update
+          </button>
+        )}
+        {updateMessage && (
+          <p className="mt-3 text-sm text-gray-700">{updateMessage}</p>
+        )}
+      </section>
 
       <form
         onSubmit={handleSubmit}

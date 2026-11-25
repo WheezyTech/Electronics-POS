@@ -92,7 +92,7 @@ export default function ReceiptPreview({ sale, onClose, autoPrint = false }) {
     () => localStorage.getItem("receipt_printer_transport") || "network"
   );
   const [networkPrinterHost, setNetworkPrinterHost] = useState(
-    () => localStorage.getItem("receipt_printer_host") || "192.168.123.110"
+    () => localStorage.getItem("receipt_printer_host") || "192.168.1.36"
   );
   const [networkPrinterPort, setNetworkPrinterPort] = useState(
     () => Number(localStorage.getItem("receipt_printer_port")) || 9100
@@ -128,6 +128,28 @@ export default function ReceiptPreview({ sale, onClose, autoPrint = false }) {
 
   const printReceipt = useCallback(async () => {
     setPrintError("");
+    if (window.electronAPI?.printNetworkReceipt) {
+      setPrinting(true);
+      try {
+        await window.electronAPI.printNetworkReceipt(
+          networkPrinterHost,
+          networkPrinterPort,
+          thermalReceiptText(sale)
+        );
+        localStorage.setItem("receipt_printer_host", networkPrinterHost);
+        localStorage.setItem("receipt_printer_port", String(networkPrinterPort));
+        localStorage.setItem("receipt_printer_transport", "network");
+      } catch (error) {
+        setPrintError(
+          error.message || "Unable to connect to the network printer."
+        );
+        setShowPrinterPicker(true);
+      } finally {
+        setPrinting(false);
+      }
+      return;
+    }
+
     if (!isAndroidNative()) {
       window.print();
       return;
@@ -192,6 +214,19 @@ export default function ReceiptPreview({ sale, onClose, autoPrint = false }) {
     setPrinting(true);
     setPrintError("");
     try {
+      if (window.electronAPI?.printNetworkReceipt) {
+        await window.electronAPI.printNetworkReceipt(
+          networkPrinterHost,
+          networkPrinterPort,
+          thermalReceiptText(sale)
+        );
+        localStorage.setItem("receipt_printer_transport", "network");
+        localStorage.setItem("receipt_printer_host", networkPrinterHost);
+        localStorage.setItem("receipt_printer_port", String(networkPrinterPort));
+        setShowPrinterPicker(false);
+        return;
+      }
+
       if (printerTransport === "network") {
         await printNetworkReceipt(
           networkPrinterHost,
@@ -282,44 +317,46 @@ export default function ReceiptPreview({ sale, onClose, autoPrint = false }) {
           </div>
         </div>
 
-        {isAndroidNative() && showPrinterPicker && (
+        {(isAndroidNative() || window.electronAPI) && showPrinterPicker && (
           <div className="space-y-3 border-b bg-slate-50 px-5 py-4 print:hidden">
             <p className="text-sm font-semibold text-slate-800">
               Configure an ESC/POS printer.
             </p>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setPrinterTransport("network")}
-                className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
-                  printerTransport === "network"
-                    ? "border-blue-600 bg-blue-50 text-blue-700"
-                    : "border-slate-300 bg-white text-slate-700"
-                }`}
-              >
-                Wi-Fi / Network
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  setPrinterTransport("bluetooth");
-                  try {
-                    const { devices } = await getPairedBluetoothPrinters();
-                    setPairedPrinters(devices || []);
-                  } catch (error) {
-                    setPrintError(error.message || "Unable to list Bluetooth printers.");
-                  }
-                }}
-                className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
-                  printerTransport === "bluetooth"
-                    ? "border-blue-600 bg-blue-50 text-blue-700"
-                    : "border-slate-300 bg-white text-slate-700"
-                }`}
-              >
-                Bluetooth
-              </button>
-            </div>
-            {printerTransport === "network" ? (
+            {!window.electronAPI && (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPrinterTransport("network")}
+                  className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+                    printerTransport === "network"
+                      ? "border-blue-600 bg-blue-50 text-blue-700"
+                      : "border-slate-300 bg-white text-slate-700"
+                  }`}
+                >
+                  Wi-Fi / Network
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setPrinterTransport("bluetooth");
+                    try {
+                      const { devices } = await getPairedBluetoothPrinters();
+                      setPairedPrinters(devices || []);
+                    } catch (error) {
+                      setPrintError(error.message || "Unable to list Bluetooth printers.");
+                    }
+                  }}
+                  className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+                    printerTransport === "bluetooth"
+                      ? "border-blue-600 bg-blue-50 text-blue-700"
+                      : "border-slate-300 bg-white text-slate-700"
+                  }`}
+                >
+                  Bluetooth
+                </button>
+              </div>
+            )}
+            {window.electronAPI || printerTransport === "network" ? (
               <div className="grid grid-cols-[1fr_120px] gap-2">
                 <input
                   value={networkPrinterHost}

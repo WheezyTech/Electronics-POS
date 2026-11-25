@@ -6,6 +6,7 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework import serializers
 from django.core.exceptions import ImproperlyConfigured
+import os
 
 from apps.accounts.email_tokens import send_contact_message
 
@@ -82,3 +83,37 @@ class ContactMessageAPIView(APIView):
             {"detail": "Your message has been sent successfully."},
             status=status.HTTP_201_CREATED,
         )
+
+
+class ApplicationUpdatesAPIView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        return Response({
+            "android": {
+                "latest_version": os.getenv("ANDROID_LATEST_VERSION", "1.0.6"),
+                "latest_version_code": int(os.getenv("ANDROID_LATEST_VERSION_CODE", "7")),
+                "download_url": os.getenv(
+                    "ANDROID_APK_DOWNLOAD_URL",
+                    "https://electronicspos.shop/downloads/electronics-pos.apk",
+                ),
+                "release_notes": os.getenv(
+                    "ANDROID_RELEASE_NOTES",
+                    "Bug fixes and printer improvements.",
+                ),
+                "mandatory": os.getenv("ANDROID_UPDATE_MANDATORY", "False").lower() == "true",
+            },
+            "windows": {
+                "latest_version": os.getenv("WINDOWS_LATEST_VERSION", "1.0.6"),
+                "download_url": os.getenv(
+                    "WINDOWS_UPDATE_URL",
+                    "https://radiant-inspiration-production-77d51767.up.railway.app/downloads",
+                ),
+                "release_notes": os.getenv(
+                    "WINDOWS_RELEASE_NOTES",
+                    "Bug fixes and printer improvements.",
+                ),
+                "mandatory": os.getenv("WINDOWS_UPDATE_MANDATORY", "False").lower() == "true",
+            },
+        })
