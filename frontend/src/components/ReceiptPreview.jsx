@@ -5,6 +5,7 @@ import {
   getPairedBluetoothPrinters,
   isAndroidNative,
   printBluetoothReceipt,
+  printNetworkReceipt,
 } from "../api/bluetoothPrinter";
 import receiptLogo from "../../assets/branding/Electronics POS Receipt logo.png";
 
@@ -87,6 +88,15 @@ function thermalReceiptText(sale) {
 
 export default function ReceiptPreview({ sale, onClose, autoPrint = false }) {
   const [pairedPrinters, setPairedPrinters] = useState([]);
+  const [printerTransport, setPrinterTransport] = useState(
+    () => localStorage.getItem("receipt_printer_transport") || "network"
+  );
+  const [networkPrinterHost, setNetworkPrinterHost] = useState(
+    () => localStorage.getItem("receipt_printer_host") || "192.168.123.110"
+  );
+  const [networkPrinterPort, setNetworkPrinterPort] = useState(
+    () => Number(localStorage.getItem("receipt_printer_port")) || 9100
+  );
   const [selectedPrinter, setSelectedPrinter] = useState(
     () => localStorage.getItem("receipt_printer_address") || ""
   );
@@ -124,6 +134,21 @@ export default function ReceiptPreview({ sale, onClose, autoPrint = false }) {
     }
 
     try {
+      if (printerTransport === "network") {
+        setPrinting(true);
+        await printNetworkReceipt(
+          networkPrinterHost,
+          networkPrinterPort,
+          thermalReceiptText(sale),
+          await getReceiptLogoBase64(),
+          qrDataUrl ? qrDataUrl.split(",")[1] : ""
+        );
+        localStorage.setItem("receipt_printer_host", networkPrinterHost);
+        localStorage.setItem("receipt_printer_port", String(networkPrinterPort));
+        localStorage.setItem("receipt_printer_transport", "network");
+        return;
+      }
+
       const { devices } = await getPairedBluetoothPrinters();
       setPairedPrinters(devices || []);
       const rememberedPrinter = (devices || []).find(
@@ -146,13 +171,20 @@ export default function ReceiptPreview({ sale, onClose, autoPrint = false }) {
       setPrintError(
         error.message || "Unable to connect to the Bluetooth printer."
       );
+      if (printerTransport === "network") {
+        setShowPrinterPicker(true);
+      }
     } finally {
       setPrinting(false);
     }
-  }, [sale, selectedPrinter]);
+  }, [sale, selectedPrinter, printerTransport, networkPrinterHost, networkPrinterPort, qrDataUrl]);
 
   const printToSelectedPrinter = async () => {
-    if (!selectedPrinter) {
+    if (printerTransport === "network" && !networkPrinterHost.trim()) {
+      setPrintError("Enter the printer IP address.");
+      return;
+    }
+    if (printerTransport === "bluetooth" && !selectedPrinter) {
       setPrintError("Select a paired Bluetooth printer first.");
       return;
     }
@@ -160,6 +192,21 @@ export default function ReceiptPreview({ sale, onClose, autoPrint = false }) {
     setPrinting(true);
     setPrintError("");
     try {
+      if (printerTransport === "network") {
+        await printNetworkReceipt(
+          networkPrinterHost,
+          networkPrinterPort,
+          thermalReceiptText(sale),
+          await getReceiptLogoBase64(),
+          qrDataUrl ? qrDataUrl.split(",")[1] : ""
+        );
+        localStorage.setItem("receipt_printer_transport", "network");
+        localStorage.setItem("receipt_printer_host", networkPrinterHost);
+        localStorage.setItem("receipt_printer_port", String(networkPrinterPort));
+        setShowPrinterPicker(false);
+        return;
+      }
+
       await printBluetoothReceipt(
         selectedPrinter,
         thermalReceiptText(sale),
@@ -167,6 +214,7 @@ export default function ReceiptPreview({ sale, onClose, autoPrint = false }) {
         qrDataUrl ? qrDataUrl.split(",")[1] : ""
       );
       localStorage.setItem("receipt_printer_address", selectedPrinter);
+      localStorage.setItem("receipt_printer_transport", "bluetooth");
       setShowPrinterPicker(false);
     } catch (error) {
       setPrintError(
@@ -237,32 +285,90 @@ export default function ReceiptPreview({ sale, onClose, autoPrint = false }) {
         {isAndroidNative() && showPrinterPicker && (
           <div className="space-y-3 border-b bg-slate-50 px-5 py-4 print:hidden">
             <p className="text-sm font-semibold text-slate-800">
-              Choose a paired ESC/POS Bluetooth printer.
+              Configure an ESC/POS printer.
             </p>
-            {!pairedPrinters.length && (
-              <p className="text-sm text-slate-600">
-                Pair and enable the printer in Android Bluetooth settings, then try printing again.
-              </p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setPrinterTransport("network")}
+                className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+                  printerTransport === "network"
+                    ? "border-blue-600 bg-blue-50 text-blue-700"
+                    : "border-slate-300 bg-white text-slate-700"
+                }`}
+              >
+                Wi-Fi / Network
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setPrinterTransport("bluetooth");
+                  try {
+                    const { devices } = await getPairedBluetoothPrinters();
+                    setPairedPrinters(devices || []);
+                  } catch (error) {
+                    setPrintError(error.message || "Unable to list Bluetooth printers.");
+                  }
+                }}
+                className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+                  printerTransport === "bluetooth"
+                    ? "border-blue-600 bg-blue-50 text-blue-700"
+                    : "border-slate-300 bg-white text-slate-700"
+                }`}
+              >
+                Bluetooth
+              </button>
+            </div>
+            {printerTransport === "network" ? (
+              <div className="grid grid-cols-[1fr_120px] gap-2">
+                <input
+                  value={networkPrinterHost}
+                  onChange={(event) => setNetworkPrinterHost(event.target.value)}
+                  placeholder="Printer IP address"
+                  className="rounded-lg border border-slate-300 p-2 text-sm"
+                />
+                <input
+                  type="number"
+                  min="1"
+                  max="65535"
+                  value={networkPrinterPort}
+                  onChange={(event) => setNetworkPrinterPort(Number(event.target.value) || 9100)}
+                  placeholder="Port"
+                  className="rounded-lg border border-slate-300 p-2 text-sm"
+                />
+              </div>
+            ) : (
+              <>
+                {!pairedPrinters.length && (
+                  <p className="text-sm text-slate-600">
+                    Pair and enable the printer in Android Bluetooth settings.
+                  </p>
+                )}
+                <select
+                  value={selectedPrinter}
+                  onChange={(event) => setSelectedPrinter(event.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white p-2 text-sm"
+                >
+                  <option value="">Select paired printer</option>
+                  {pairedPrinters.map((printer) => (
+                    <option key={printer.address} value={printer.address}>
+                      {printer.name || "Bluetooth printer"} ({printer.address})
+                    </option>
+                  ))}
+                </select>
+              </>
             )}
-            <select
-              value={selectedPrinter}
-              onChange={(event) => setSelectedPrinter(event.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white p-2 text-sm"
-            >
-              <option value="">Select paired printer</option>
-              {pairedPrinters.map((printer) => (
-                <option key={printer.address} value={printer.address}>
-                  {printer.name || "Bluetooth printer"} ({printer.address})
-                </option>
-              ))}
-            </select>
             {printError && (
               <p role="alert" className="text-sm text-red-700">{printError}</p>
             )}
             <button
               type="button"
               onClick={printToSelectedPrinter}
-              disabled={printing || !selectedPrinter}
+              disabled={
+                printing ||
+                (printerTransport === "bluetooth" && !selectedPrinter) ||
+                (printerTransport === "network" && !networkPrinterHost.trim())
+              }
               className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
             >
               {printing ? "Printing..." : "Print receipt"}

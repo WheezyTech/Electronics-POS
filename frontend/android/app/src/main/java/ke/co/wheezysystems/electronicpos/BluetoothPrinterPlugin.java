@@ -26,6 +26,8 @@ import com.getcapacitor.annotation.PermissionCallback;
 import java.io.OutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.util.Set;
 import java.util.UUID;
 
@@ -112,6 +114,24 @@ public class BluetoothPrinterPlugin extends Plugin {
         new Thread(() -> printToPrinter(call, address, text), "pos-bt-receipt").start();
     }
 
+    @PluginMethod
+    public void printNetworkReceipt(PluginCall call) {
+        String host = call.getString("host");
+        String text = call.getString("text");
+        Integer portValue = call.getInt("port");
+        int port = portValue == null ? 9100 : portValue;
+
+        if (host == null || host.trim().isEmpty() || text == null) {
+            call.reject("A printer IP address and receipt text are required.");
+            return;
+        }
+
+        new Thread(
+            () -> printToNetworkPrinter(call, host.trim(), port, text),
+            "pos-network-receipt"
+        ).start();
+    }
+
     @PermissionCallback
     private void printReceiptPermissionCallback(PluginCall call) {
         if (needsBluetoothPermission()) {
@@ -175,6 +195,43 @@ public class BluetoothPrinterPlugin extends Plugin {
                     Log.w(TAG, "Unable to close the Bluetooth printer connection.", exception);
                 }
             }
+        }
+    }
+
+    private void printToNetworkPrinter(
+        PluginCall call,
+        String host,
+        int port,
+        String text
+    ) {
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress(host, port), 5000);
+            socket.setTcpNoDelay(true);
+
+            OutputStream output = socket.getOutputStream();
+            output.write(new byte[] { 0x1B, 0x40 });
+            String logoBase64 = call.getString("logoBase64");
+            if (logoBase64 != null && !logoBase64.isEmpty()) {
+                output.write(new byte[] { 0x1B, 0x61, 0x01 });
+                writeRasterLogo(output, logoBase64);
+                output.write(new byte[] { 0x0A, 0x1B, 0x61, 0x00 });
+            }
+            output.write(text.getBytes(StandardCharsets.UTF_8));
+            String qrBase64 = call.getString("qrBase64");
+            if (qrBase64 != null && !qrBase64.isEmpty()) {
+                output.write(new byte[] { 0x0A, 0x1B, 0x61, 0x01 });
+                writeRasterLogo(output, qrBase64);
+                output.write(new byte[] { 0x0A, 0x1B, 0x61, 0x00 });
+            }
+            output.write(new byte[] { 0x0A, 0x0A, 0x0A, 0x1D, 0x56, 0x00 });
+            output.flush();
+            call.resolve();
+        } catch (IOException | IllegalArgumentException exception) {
+            call.reject(
+                "Network receipt printing failed: "
+                    + exception.getMessage()
+                    + ". Check that the phone and printer are on the same Wi-Fi network."
+            );
         }
     }
 
