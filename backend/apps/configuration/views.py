@@ -96,7 +96,7 @@ class ApplicationUpdatesAPIView(APIView):
                 "latest_version_code": int(os.getenv("ANDROID_LATEST_VERSION_CODE", "9")),
                 "download_url": os.getenv(
                     "ANDROID_APK_DOWNLOAD_URL",
-                    "https://electronicspos.shop/downloads/electronics-pos.apk",
+                    "https://www.electronicspos.shop/downloads/electronics-pos.apk",
                 ),
                 "release_notes": os.getenv(
                     "ANDROID_RELEASE_NOTES",
