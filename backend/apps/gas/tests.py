@@ -1,7 +1,9 @@
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.inventory.models import StockBalance, StockLocation, StockMovement
@@ -9,6 +11,7 @@ from apps.purchases.models import Supplier
 from apps.products.models import Category, Product, Unit
 from .models import (
     GasBrand,
+    GasCylinder,
     GasCylinderSize,
     GasExchange,
     GasPurchase,
@@ -34,6 +37,92 @@ class GasExchangeTests(TestCase):
         self.location = StockLocation.objects.create(name="Gas Store", code="GAS")
         self.brand = GasBrand.objects.create(name="Total")
         self.size = GasCylinderSize.objects.create(name="13kg", weight_kg=13)
+
+    def test_report_lists_low_stock_and_due_inspection_alerts(self):
+        zero_stock_brand = GasBrand.objects.create(name="Zero stock")
+        normal_stock_brand = GasBrand.objects.create(name="Normal stock")
+        GasStock.objects.create(
+            location=self.location,
+            brand=self.brand,
+            size=self.size,
+            full_quantity=1,
+        )
+        GasStock.objects.create(
+            location=self.location,
+            brand=zero_stock_brand,
+            size=self.size,
+            full_quantity=0,
+        )
+        GasStock.objects.create(
+            location=self.location,
+            brand=normal_stock_brand,
+            size=self.size,
+            full_quantity=2,
+        )
+
+        today = timezone.localdate()
+        GasCylinder.objects.create(
+            serial_number="CYL-DUE",
+            brand=self.brand,
+            size=self.size,
+            location=self.location,
+            next_inspection_date=today,
+        )
+        GasCylinder.objects.create(
+            serial_number="CYL-OVERDUE",
+            brand=self.brand,
+            size=self.size,
+            location=self.location,
+            next_inspection_date=today - timedelta(days=1),
+        )
+        GasCylinder.objects.create(
+            serial_number="CYL-FUTURE",
+            brand=self.brand,
+            size=self.size,
+            location=self.location,
+            next_inspection_date=today + timedelta(days=1),
+        )
+        GasCylinder.objects.create(
+            serial_number="CYL-INACTIVE",
+            brand=self.brand,
+            size=self.size,
+            location=self.location,
+            next_inspection_date=today,
+            active=False,
+        )
+
+        response = self.client.get("/api/gas/reports/")
+
+        self.assertEqual(response.status_code, 200)
+        stock_alerts = {
+            alert["brand_name"]: alert
+            for alert in response.data["low_stock_alerts"]
+        }
+        self.assertCountEqual(
+            stock_alerts,
+            [self.brand.name, zero_stock_brand.name],
+        )
+        self.assertEqual(
+            stock_alerts[self.brand.name]["suggested_reorder_quantity"],
+            0,
+        )
+        self.assertEqual(
+            stock_alerts[zero_stock_brand.name]["suggested_reorder_quantity"],
+            1,
+        )
+        inspection_alerts = {
+            alert["serial_number"]: alert
+            for alert in response.data["inspection_alerts"]
+        }
+        self.assertEqual(set(inspection_alerts), {"CYL-DUE", "CYL-OVERDUE"})
+        self.assertEqual(
+            inspection_alerts["CYL-DUE"]["inspection_status"],
+            "DUE TODAY",
+        )
+        self.assertEqual(
+            inspection_alerts["CYL-OVERDUE"]["inspection_status"],
+            "OVERDUE",
+        )
 
     def test_exchange_issues_full_and_receives_empty(self):
         stock = GasStock.objects.create(

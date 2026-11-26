@@ -436,7 +436,22 @@ class PasswordResetRequestView(APIView):
             email_verified=True,
         ).first()
         if user:
-            send_password_reset(user)
+            try:
+                send_password_reset(user)
+            except (ImproperlyConfigured, RuntimeError):
+                logger.exception(
+                    "Password reset email delivery failed for user id=%s",
+                    user.pk,
+                )
+                return Response(
+                    {
+                        "detail": (
+                            "We could not send the password reset email "
+                            "right now. Please try again later."
+                        )
+                    },
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
 
         return Response({
             "detail": (

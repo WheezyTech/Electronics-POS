@@ -91,6 +91,10 @@ class CustomTokenObtainPairSerializerTests(TestCase):
             str(self.device_sync_id),
         )
         self.assertEqual(
+            access["exp"] - access["iat"],
+            timedelta(hours=12).total_seconds(),
+        )
+        self.assertEqual(
             serializer.validated_data["device"]["sync_id"],
             str(self.device_sync_id),
         )
@@ -377,6 +381,29 @@ class AccountEmailTests(TestCase):
         self.assertEqual(confirm_response.status_code, 200)
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password("New-Reset-Password-92847!"))
+
+    @patch(
+        "apps.accounts.views.send_password_reset",
+        side_effect=RuntimeError("Resend email delivery failed."),
+    )
+    def test_password_reset_email_delivery_failure_returns_service_unavailable(
+        self, send_password_reset
+    ):
+        self.user.email_verified = True
+        self.user.save(update_fields=["email_verified"])
+
+        response = self.client.post(
+            reverse("password-reset"),
+            {"email": self.user.email},
+        )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.data["detail"],
+            "We could not send the password reset email right now. "
+            "Please try again later.",
+        )
+        send_password_reset.assert_called_once_with(self.user)
 
     def test_email_verification_requires_valid_token(self):
         uid = urlsafe_base64_encode(force_bytes(self.user.pk))

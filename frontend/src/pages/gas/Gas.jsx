@@ -237,6 +237,43 @@ export default function Gas() {
             <Metric title="Refill sales" value={money(report?.daily?.refill_sales)} icon={RefreshCw}/>
             <Metric title="Outstanding deposits" value={money(report?.outstanding_cylinder_deposits)} icon={ShoppingCart}/>
           </div>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card title="Low full-cylinder stock (1 or fewer)">
+              <Table headers={["Location", "Brand", "Size", "Full", "Suggested order"]}>
+                {(report?.low_stock_alerts || []).map((row) => (
+                  <tr key={row.id} className="border-t">
+                    <td>{row.location_name}</td>
+                    <td>{row.brand_name}</td>
+                    <td>{row.size_name}</td>
+                    <td>{row.full_quantity}</td>
+                    <td>{row.suggested_reorder_quantity}</td>
+                  </tr>
+                ))}
+                {!(report?.low_stock_alerts || []).length && (
+                  <tr><td colSpan="5" className="py-3 text-slate-500">No low-stock alerts.</td></tr>
+                )}
+              </Table>
+            </Card>
+            <Card title="Cylinder inspections due or overdue">
+              <Table headers={["Cylinder", "Location", "Due date", "Status"]}>
+                {(report?.inspection_alerts || []).map((cylinder) => (
+                  <tr key={cylinder.id} className="border-t">
+                    <td>{cylinder.serial_number}</td>
+                    <td>{cylinder.location_name}</td>
+                    <td>{cylinder.next_inspection_date}</td>
+                    <td>
+                      <span className={cylinder.inspection_status === "OVERDUE" ? "font-semibold text-red-700" : "font-semibold text-amber-700"}>
+                        {cylinder.inspection_status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {!(report?.inspection_alerts || []).length && (
+                  <tr><td colSpan="4" className="py-3 text-slate-500">No inspections are due.</td></tr>
+                )}
+              </Table>
+            </Card>
+          </div>
           <Card title="Cylinder stock">
             <div className="mb-4 grid gap-2 md:grid-cols-3">
               <Select required={false} value={stockFilter.location} onChange={(value) => setStockFilter((current) => ({ ...current, location: value }))} label="Filter by location" options={[["", "All locations"], ...locations.map((item) => [item.id, item.name])]} />

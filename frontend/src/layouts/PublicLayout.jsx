@@ -1,10 +1,14 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { Download, Menu, X } from "lucide-react";
 import { useState } from "react";
 import webLogo from "../../assets/branding/Electronics POS Web logo.png";
+import { isInstalledApp } from "../utils/appEnvironment";
 
 export default function PublicLayout() {
   const [open, setOpen] = useState(false);
+  const { pathname } = useLocation();
+  if (isInstalledApp() && pathname === "/") return <Outlet />;
+
   const links = [
     ["/", "Home"],
     ["/about", "About"],

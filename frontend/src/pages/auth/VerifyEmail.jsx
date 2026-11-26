@@ -154,14 +154,12 @@ export default function VerifyEmail() {
             </form>
           </div>
         )}
-        {!["verifying", "request"].includes(pageStatus) && (
-          <Link
-            to="/login"
-            className="mt-6 inline-block rounded-lg bg-blue-600 px-5 py-3 font-semibold text-white hover:bg-blue-700"
-          >
-            Go to sign in
-          </Link>
-        )}
+        <Link
+          to="/login"
+          className="mt-6 inline-block rounded-lg bg-blue-600 px-5 py-3 font-semibold text-white hover:bg-blue-700"
+        >
+          Back to login
+        </Link>
       </div>
     </div>
   );

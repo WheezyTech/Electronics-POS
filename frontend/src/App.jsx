@@ -6,8 +6,9 @@ import {
   Route,
   Navigate,
 } from "react-router-dom";
+import { isInstalledApp } from "./utils/appEnvironment";
 
-import { AuthProvider } from "./context/AuthContext";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import DashboardLayout from "./layouts/DashboardLayout";
 
@@ -40,18 +41,60 @@ import Contact from "./pages/public/Contact";
 // Electron exposes electronAPI through the preload script.
 const Router = window.electronAPI ? HashRouter : BrowserRouter;
 
+function getAuthenticatedLanding(user) {
+  return ["ACCOUNTANT", "AUDITOR"].includes(user?.role)
+    ? "/reports"
+    : "/dashboard";
+}
+
+function AppEntry() {
+  const { user, loading } = useAuth();
+
+  if (!isInstalledApp()) return <Home />;
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        Loading account...
+      </div>
+    );
+  }
+
+  return (
+    <Navigate
+      to={user ? getAuthenticatedLanding(user) : "/login"}
+      replace
+    />
+  );
+}
+
+function LoginEntry() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        Loading account...
+      </div>
+    );
+  }
+
+  return user
+    ? <Navigate to={getAuthenticatedLanding(user)} replace />
+    : <Login />;
+}
+
 function App() {
   return (
     <Router>
       <AuthProvider>
         <Routes>
           <Route element={<PublicLayout />}>
-            <Route path="/" element={<Home />} />
+            <Route path="/" element={<AppEntry />} />
             <Route path="/about" element={<About />} />
             <Route path="/services" element={<Services />} />
             <Route path="/contact" element={<Contact />} />
           </Route>
-          <Route path="/login" element={<Login />} />
+          <Route path="/login" element={<LoginEntry />} />
           <Route path="/forgot-password" element={<PasswordReset />} />
           <Route path="/reset-password" element={<PasswordReset />} />
           <Route path="/verify-email" element={<VerifyEmail />} />

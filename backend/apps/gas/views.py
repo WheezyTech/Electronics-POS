@@ -641,6 +641,35 @@ class GasReportAPIView(APIView):
         purchases = apply_date(GasPurchase.objects.all())
         sales = apply_date(NewCylinderSale.objects.all())
         stocks = GasStock.objects.select_related("location", "brand", "size")
+        low_stock_alerts = [
+            {
+                **GasStockSerializer(stock).data,
+                "suggested_reorder_quantity": max(1 - stock.full_quantity, 0),
+            }
+            for stock in stocks.filter(full_quantity__lte=1).order_by(
+                "location__name",
+                "brand__name",
+                "size__weight_kg",
+            )
+        ]
+        today = timezone.localdate()
+        inspection_alerts = [
+            {
+                **GasCylinderSerializer(cylinder).data,
+                "inspection_status": (
+                    "OVERDUE"
+                    if cylinder.next_inspection_date < today
+                    else "DUE TODAY"
+                ),
+            }
+            for cylinder in GasCylinder.objects.filter(
+                active=True,
+                next_inspection_date__lte=today,
+            ).select_related("location", "brand", "size").order_by(
+                "next_inspection_date",
+                "serial_number",
+            )
+        ]
         deposit_total = CylinderDeposit.objects.filter(status=CylinderDeposit.Status.OUTSTANDING).aggregate(
             total=Sum("amount")
         )["total"] or Decimal("0.00")
@@ -690,6 +719,8 @@ class GasReportAPIView(APIView):
                 "full_cylinders": sum(stock.full_quantity for stock in stocks),
                 "empty_cylinders": sum(stock.empty_quantity for stock in stocks),
             },
+            "low_stock_alerts": low_stock_alerts,
+            "inspection_alerts": inspection_alerts,
             "outstanding_cylinder_deposits": deposit_total,
             "movements": GasMovementSerializer(
                 GasStockMovement.objects.select_related("location", "brand", "size").order_by("-created_at")[:200],
