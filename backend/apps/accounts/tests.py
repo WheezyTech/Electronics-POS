@@ -343,7 +343,7 @@ class AccountEmailTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 503)
-        self.assertIn("Resend email configuration", response.data["detail"])
+        self.assertIn("try again later", response.data["detail"])
         send_email.assert_called_once_with(self.user)
 
     @patch("apps.accounts.email_tokens._send_resend_email")

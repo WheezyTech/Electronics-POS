@@ -406,9 +406,9 @@ class EmailVerificationRequestView(APIView):
                 return Response(
                     {
                         "detail": (
-                            "We could not send the verification email. "
-                            "Please contact the administrator to check the "
-                            "Resend email configuration."
+                            "We could not send the verification email right "
+                            "now. Please try again later or contact the "
+                            "administrator."
                         )
                     },
                     status=status.HTTP_503_SERVICE_UNAVAILABLE,
