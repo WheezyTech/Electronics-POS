@@ -51,6 +51,7 @@ def _send_resend_email(subject, message, recipient):
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            "User-Agent": "ElectronicsPOS/1.0",
         },
         method="POST",
     )

@@ -16,7 +16,7 @@ from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
 from .serializers import CustomTokenObtainPairSerializer
 from .models import Device, OfflineAuthorization
-from .email_tokens import email_verification_token
+from .email_tokens import email_verification_token, send_password_reset
 from .phone_verification import (
     normalize_kenyan_phone,
     hash_phone_otp,
@@ -381,6 +381,26 @@ class AccountEmailTests(TestCase):
         self.assertEqual(confirm_response.status_code, 200)
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password("New-Reset-Password-92847!"))
+
+    @override_settings(
+        RESEND_API_KEY="re_test_api_key",
+        DEFAULT_FROM_EMAIL="Electronics POS <noreply@example.test>",
+    )
+    @patch("apps.accounts.email_tokens.urlopen")
+    def test_password_reset_resend_request_uses_descriptive_user_agent(
+        self, urlopen
+    ):
+        urlopen.return_value.__enter__.return_value.read.return_value = (
+            b'{"id":"email-id"}'
+        )
+
+        send_password_reset(self.user)
+
+        request = urlopen.call_args.args[0]
+        self.assertEqual(
+            request.get_header("User-agent"),
+            "ElectronicsPOS/1.0",
+        )
 
     @patch(
         "apps.accounts.views.send_password_reset",
