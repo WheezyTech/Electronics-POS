@@ -13,14 +13,14 @@ from rest_framework.views import APIView
 
 from .models import (
     GasBrand, GasCylinderSize, GasCylinder, GasStock, GasStockMovement,
-    GasRefill, GasExchange, GasPurchase, CylinderDeposit, NewCylinderSale,
-    NewCylinderSaleAccessory,
+    GasRefill, GasExchange, GasPurchase, CylinderDeposit, GasPayment,
+    NewCylinderSale, NewCylinderSaleAccessory,
 )
 from .serializers import (
     GasBrandSerializer, GasCylinderSizeSerializer, GasCylinderSerializer,
     GasStockSerializer, GasMovementSerializer, CylinderDepositSerializer,
-    GasRefillSerializer, GasExchangeSerializer, GasPurchaseSerializer,
-    NewCylinderSaleSerializer,
+    GasPaymentInputSerializer, GasRefillSerializer, GasExchangeSerializer,
+    GasPurchaseSerializer, NewCylinderSaleSerializer,
 )
 from .permissions import (
     GasAuthorizedPermission,
@@ -50,6 +50,80 @@ def get_transaction_tax(amount):
 
 def reference(prefix):
     return f"{prefix}-{uuid.uuid4().hex[:12].upper()}"
+
+
+def validate_gas_payments(data, amount_due):
+    if "payments" not in data:
+        payment_method = data.get("payment_method", "")
+        if not payment_method:
+            return None
+        payment_data = [{
+            "payment_method": payment_method,
+            "amount": amount_due,
+            "transaction_reference": data.get("transaction_reference", ""),
+        }]
+    else:
+        payment_data = data["payments"]
+
+    serializer = GasPaymentInputSerializer(
+        data=payment_data,
+        many=True,
+        allow_empty=False,
+    )
+    serializer.is_valid(raise_exception=True)
+    payments = serializer.validated_data
+    payment_total = sum(
+        (payment["amount"] for payment in payments),
+        Decimal("0.00"),
+    )
+    if payment_total != amount_due:
+        raise ValidationError({
+            "payments": (
+                f"Payment amounts must equal the transaction total of "
+                f"{amount_due}."
+            )
+        })
+    return payments
+
+
+def save_gas_payments(transaction, payments, user):
+    if payments is None:
+        return
+
+    if isinstance(transaction, GasRefill):
+        transaction_field = "gas_refill"
+    elif isinstance(transaction, GasExchange):
+        transaction_field = "gas_exchange"
+    else:
+        transaction_field = "cylinder_sale"
+
+    for payment in payments:
+        GasPayment.objects.create(
+            **{
+                transaction_field: transaction,
+                "payment_method": payment["payment_method"],
+                "amount": payment["amount"],
+                "transaction_reference": payment.get(
+                    "transaction_reference", ""
+                ),
+                "received_by": user,
+            }
+        )
+
+
+def legacy_payment_fields(data, payments):
+    if payments is None:
+        return (
+            data.get("payment_method", ""),
+            data.get("transaction_reference", ""),
+        )
+    if len(payments) == 1:
+        payment = payments[0]
+        return (
+            payment["payment_method"],
+            payment.get("transaction_reference", ""),
+        )
+    return "", ""
 
 
 @transaction.atomic
@@ -211,7 +285,7 @@ class DepositViewSet(viewsets.ModelViewSet):
 class RefillViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = GasRefill.objects.select_related(
         "location", "brand", "customer_brand", "size"
-    )
+    ).prefetch_related("payments")
     serializer_class = GasRefillSerializer
     permission_classes = [IsAuthenticated, GasTransactionPermission]
 
@@ -275,6 +349,12 @@ class RefillViewSet(viewsets.ReadOnlyModelViewSet):
             raise ValidationError("The selected cylinder size is invalid or inactive.")
         total = refill_price * quantity
         tax_rate, tax_amount, tax_included = get_transaction_tax(total)
+        amount_due = total if tax_included else total + tax_amount
+        payments = validate_gas_payments(data, amount_due)
+        payment_method, transaction_reference = legacy_payment_fields(
+            data,
+            payments,
+        )
         tx_reference = reference("REF")
         refill = GasRefill.objects.create(
             reference=tx_reference,
@@ -291,10 +371,11 @@ class RefillViewSet(viewsets.ReadOnlyModelViewSet):
             tax_rate=tax_rate,
             tax_amount=tax_amount,
             tax_included=tax_included,
-            payment_method=data.get("payment_method", ""),
-            transaction_reference=data.get("transaction_reference", ""),
+            payment_method=payment_method,
+            transaction_reference=transaction_reference,
             recorded_by=request.user,
         )
+        save_gas_payments(refill, payments, request.user)
         change_gas_stock(location=location, brand=brand, size=size, cylinder_status="FULL",
                          quantity_delta=-quantity, movement_type=GasStockMovement.MovementType.REFILL_ISSUE,
                          performed_by=request.user, reference_value=tx_reference)
@@ -305,7 +386,9 @@ class RefillViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class ExchangeViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = GasExchange.objects.select_related("location", "brand", "size")
+    queryset = GasExchange.objects.select_related(
+        "location", "brand", "size"
+    ).prefetch_related("payments")
     serializer_class = GasExchangeSerializer
     permission_classes = [IsAuthenticated, GasTransactionPermission]
 
@@ -350,6 +433,12 @@ class ExchangeViewSet(viewsets.ReadOnlyModelViewSet):
             raise ValidationError("Quantity must be greater than zero.")
         tx_reference = reference("EXC")
         tax_rate, tax_amount, tax_included = get_transaction_tax(refill_payment)
+        amount_due = refill_payment if tax_included else refill_payment + tax_amount
+        payments = validate_gas_payments(data, amount_due)
+        payment_method, transaction_reference = legacy_payment_fields(
+            data,
+            payments,
+        )
         exchange = GasExchange.objects.create(
             reference=tx_reference,
             location=location,
@@ -362,10 +451,11 @@ class ExchangeViewSet(viewsets.ReadOnlyModelViewSet):
             tax_rate=tax_rate,
             tax_amount=tax_amount,
             tax_included=tax_included,
-            payment_method=data.get("payment_method", ""),
-            transaction_reference=data.get("transaction_reference", ""),
+            payment_method=payment_method,
+            transaction_reference=transaction_reference,
             recorded_by=request.user,
         )
+        save_gas_payments(exchange, payments, request.user)
         change_gas_stock(location=location, brand=brand, size=size, cylinder_status="EMPTY",
                          quantity_delta=quantity, movement_type=GasStockMovement.MovementType.EXCHANGE_RECEIVED,
                          performed_by=request.user, reference_value=tx_reference)
@@ -455,7 +545,7 @@ class PurchaseViewSet(viewsets.ReadOnlyModelViewSet):
 class NewCylinderSaleViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = NewCylinderSale.objects.select_related(
         "location", "brand", "size"
-    ).prefetch_related("accessory_items__product")
+    ).prefetch_related("accessory_items__product", "payments")
     serializer_class = NewCylinderSaleSerializer
     permission_classes = [IsAuthenticated, GasTransactionPermission]
 
@@ -554,6 +644,12 @@ class NewCylinderSaleViewSet(viewsets.ReadOnlyModelViewSet):
         cylinder_total = selling_price * quantity
         gross_total = cylinder_total + accessories_total
         tax_rate, tax_amount, tax_included = get_transaction_tax(gross_total)
+        amount_due = gross_total if tax_included else gross_total + tax_amount
+        payments = validate_gas_payments(data, amount_due)
+        payment_method, transaction_reference = legacy_payment_fields(
+            data,
+            payments,
+        )
         tx_reference = reference("GCS")
         sale = NewCylinderSale.objects.create(
             reference=tx_reference,
@@ -574,10 +670,11 @@ class NewCylinderSaleViewSet(viewsets.ReadOnlyModelViewSet):
             customer_name=data.get("customer_name", ""),
             customer_phone=data.get("customer_phone", ""),
             accessories=data.get("accessories", []),
-            payment_method=data.get("payment_method", ""),
-            transaction_reference=data.get("transaction_reference", ""),
+            payment_method=payment_method,
+            transaction_reference=transaction_reference,
             recorded_by=request.user,
         )
+        save_gas_payments(sale, payments, request.user)
         for product_id, accessory_quantity in accessories:
             product = accessory_products[product_id]
             NewCylinderSaleAccessory.objects.create(

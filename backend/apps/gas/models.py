@@ -4,6 +4,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.db import models
 from django.db.models import F, Q
+from django.core.validators import MinValueValidator
 
 from apps.inventory.models import StockLocation
 from apps.purchases.models import Supplier
@@ -256,6 +257,63 @@ class NewCylinderSale(models.Model):
     @property
     def total_amount(self):
         return self.selling_price * self.quantity + self.accessories_total
+
+
+class GasPayment(models.Model):
+    class PaymentMethod(models.TextChoices):
+        CASH = "CASH", "Cash"
+        MPESA = "MPESA", "M-Pesa"
+        BANK = "BANK", "Bank Transfer"
+        CARD = "CARD", "Card"
+        OTHER = "OTHER", "Other"
+
+    gas_refill = models.ForeignKey(
+        GasRefill,
+        on_delete=models.CASCADE,
+        related_name="payments",
+        null=True,
+        blank=True,
+    )
+    gas_exchange = models.ForeignKey(
+        GasExchange,
+        on_delete=models.CASCADE,
+        related_name="payments",
+        null=True,
+        blank=True,
+    )
+    cylinder_sale = models.ForeignKey(
+        NewCylinderSale,
+        on_delete=models.CASCADE,
+        related_name="payments",
+        null=True,
+        blank=True,
+    )
+    payment_method = models.CharField(max_length=20, choices=PaymentMethod.choices)
+    amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+    transaction_reference = models.CharField(max_length=100, blank=True)
+    received_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="received_gas_payments",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    Q(gas_refill__isnull=False, gas_exchange__isnull=True, cylinder_sale__isnull=True)
+                    | Q(gas_refill__isnull=True, gas_exchange__isnull=False, cylinder_sale__isnull=True)
+                    | Q(gas_refill__isnull=True, gas_exchange__isnull=True, cylinder_sale__isnull=False)
+                ),
+                name="gas_payment_one_transaction",
+            ),
+        ]
+        ordering = ["created_at"]
 
 
 class NewCylinderSaleAccessory(models.Model):

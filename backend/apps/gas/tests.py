@@ -6,6 +6,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from apps.configuration.models import BusinessSettings
 from apps.inventory.models import StockBalance, StockLocation, StockMovement
 from apps.purchases.models import Supplier
 from apps.products.models import Category, Product, Unit
@@ -14,6 +15,7 @@ from .models import (
     GasCylinder,
     GasCylinderSize,
     GasExchange,
+    GasPayment,
     GasPurchase,
     GasRefill,
     GasStock,
@@ -159,6 +161,149 @@ class GasExchangeTests(TestCase):
         }
         self.assertEqual(movements, {"FULL": -1, "EMPTY": 1})
 
+    def test_exchange_records_split_payments_including_tax(self):
+        BusinessSettings.objects.create(tax_enabled=True, tax_rate=Decimal("16.00"))
+        stock = GasStock.objects.create(
+            location=self.location,
+            brand=self.brand,
+            size=self.size,
+            full_quantity=1,
+        )
+
+        response = self.client.post(
+            "/api/gas/exchanges/create_exchange/",
+            {
+                "location": self.location.pk,
+                "brand": self.brand.pk,
+                "size": self.size.pk,
+                "quantity": 1,
+                "refill_payment": "800.00",
+                "payments": [
+                    {"payment_method": "CASH", "amount": "400.00"},
+                    {
+                        "payment_method": "BANK",
+                        "amount": "528.00",
+                        "transaction_reference": "BANK-123",
+                    },
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(
+            [
+                (payment["payment_method"], Decimal(payment["amount"]))
+                for payment in response.data["payments"]
+            ],
+            [
+                ("CASH", Decimal("400.00")),
+                ("BANK", Decimal("528.00")),
+            ],
+        )
+        self.assertEqual(response.data["payment_method"], "")
+        self.assertEqual(GasPayment.objects.count(), 2)
+        stock.refresh_from_db()
+        self.assertEqual(stock.full_quantity, 0)
+
+    def test_exchange_rejects_split_payments_that_do_not_match_total(self):
+        stock = GasStock.objects.create(
+            location=self.location,
+            brand=self.brand,
+            size=self.size,
+            full_quantity=1,
+        )
+
+        response = self.client.post(
+            "/api/gas/exchanges/create_exchange/",
+            {
+                "location": self.location.pk,
+                "brand": self.brand.pk,
+                "size": self.size.pk,
+                "quantity": 1,
+                "refill_payment": "800.00",
+                "payments": [
+                    {"payment_method": "CASH", "amount": "300.00"},
+                    {"payment_method": "BANK", "amount": "400.00"},
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(GasExchange.objects.count(), 0)
+        self.assertEqual(GasPayment.objects.count(), 0)
+        self.assertEqual(GasStockMovement.objects.count(), 0)
+        stock.refresh_from_db()
+        self.assertEqual(stock.full_quantity, 1)
+
+    def test_refill_records_split_payment_allocations(self):
+        GasStock.objects.create(
+            location=self.location,
+            brand=self.brand,
+            size=self.size,
+            full_quantity=1,
+        )
+
+        response = self.client.post(
+            "/api/gas/refills/create_refill/",
+            {
+                "location": self.location.pk,
+                "brand": self.brand.pk,
+                "size": self.size.pk,
+                "quantity": 1,
+                "refill_price": "100.00",
+                "payments": [
+                    {"payment_method": "CASH", "amount": "40.00"},
+                    {"payment_method": "BANK", "amount": "60.00"},
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        refill = GasRefill.objects.get()
+        self.assertEqual(refill.payments.count(), 2)
+        self.assertEqual(refill.payment_method, "")
+        self.assertEqual(
+            list(refill.payments.values_list("amount", flat=True)),
+            [Decimal("40.00"), Decimal("60.00")],
+        )
+
+    def test_new_cylinder_sale_records_split_payment_allocations(self):
+        GasStock.objects.create(
+            location=self.location,
+            brand=self.brand,
+            size=self.size,
+            full_quantity=1,
+        )
+
+        response = self.client.post(
+            "/api/gas/sales/create_sale/",
+            {
+                "location": self.location.pk,
+                "brand": self.brand.pk,
+                "size": self.size.pk,
+                "status": "FULL",
+                "quantity": 1,
+                "selling_price": "1000.00",
+                "payments": [
+                    {"payment_method": "CASH", "amount": "500.00"},
+                    {"payment_method": "BANK", "amount": "500.00"},
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        sale = NewCylinderSale.objects.get()
+        self.assertEqual(sale.payments.count(), 2)
+        self.assertEqual(sale.payment_method, "")
+        self.assertEqual(
+            sum(sale.payments.values_list("amount", flat=True)),
+            Decimal("1000.00"),
+        )
+
     def test_exchange_without_full_stock_is_rejected_without_movement(self):
         stock = GasStock.objects.create(
             location=self.location,
@@ -242,6 +387,15 @@ class GasExchangeTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 201)
+        self.assertEqual(
+            list(
+                GasPayment.objects.values_list(
+                    "payment_method",
+                    "amount",
+                )
+            ),
+            [("CASH", Decimal("800.00"))],
+        )
 
     def test_cashier_cannot_adjust_gas_stock(self):
         self.user.role = "CASHIER"

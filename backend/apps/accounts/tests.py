@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import timedelta
 from urllib.parse import parse_qs, urlparse
@@ -329,6 +330,11 @@ class AccountEmailTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(send_email.call_count, 1)
         self.assertIn("verify-email", send_email.call_args.args[1])
+        html_message = send_email.call_args.kwargs["html_message"]
+        self.assertIn("ELECTRONICS POS", html_message)
+        self.assertIn("Verify my email", html_message)
+        self.user.refresh_from_db()
+        self.assertIn(self.user.email_verification_otp, html_message)
 
     @patch(
         "apps.accounts.views.send_email_verification",
@@ -364,6 +370,9 @@ class AccountEmailTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(send_email.call_count, 1)
+        html_message = send_email.call_args.kwargs["html_message"]
+        self.assertIn("Reset your password", html_message)
+        self.assertIn("Reset my password", html_message)
         link = next(
             line for line in send_email.call_args.args[1].splitlines()
             if line.startswith("https://")
@@ -401,6 +410,10 @@ class AccountEmailTests(TestCase):
             request.get_header("User-agent"),
             "ElectronicsPOS/1.0",
         )
+        payload = json.loads(request.data)
+        self.assertIn("<html", payload["html"])
+        self.assertIn("Reset my password", payload["html"])
+        self.assertIn("Reset your password", payload["text"])
 
     @patch(
         "apps.accounts.views.send_password_reset",

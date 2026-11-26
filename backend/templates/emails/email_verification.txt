@@ -1,0 +1,19 @@
+ELECTRONICS POS
+POINT OF SALE MANAGEMENT SYSTEM
+
+Verify your email address
+
+Hello {{ username }},
+
+Welcome to Electronics POS. Verify your email address to finish setting up your account.
+
+Your verification code is: {{ otp }}
+{{ expiry_note }}
+
+Or verify your email using this link:
+{{ action_url|safe }}
+
+{{ security_note }}
+
+Electronics POS
+Automated system notification. Please do not reply.

@@ -6,6 +6,7 @@ from .models import (
     GasCylinder,
     GasCylinderSize,
     GasExchange,
+    GasPayment,
     GasPurchase,
     GasRefill,
     GasStock,
@@ -110,6 +111,30 @@ class GasStockMovementAdmin(GasAdmin):
     )
     list_filter = ("movement_type", "cylinder_status", "location", "created_at")
     search_fields = ("reference", "transaction_id", "brand__name", "size__name")
+    date_hierarchy = "created_at"
+
+
+@admin.register(GasPayment)
+class GasPaymentAdmin(GasAdmin):
+    list_display = (
+        "id",
+        "payment_method",
+        "amount",
+        "gas_refill",
+        "gas_exchange",
+        "cylinder_sale",
+        "transaction_reference",
+        "received_by",
+        "created_at",
+    )
+    list_filter = ("payment_method", "created_at")
+    search_fields = (
+        "transaction_reference",
+        "gas_refill__reference",
+        "gas_exchange__reference",
+        "cylinder_sale__reference",
+        "received_by__username",
+    )
     date_hierarchy = "created_at"
 
 

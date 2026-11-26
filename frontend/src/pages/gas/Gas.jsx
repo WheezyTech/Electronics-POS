@@ -2,10 +2,74 @@ import { useEffect, useState } from "react";
 import api from "../../api/axios";
 import { useAuth } from "../../context/AuthContext";
 import ReceiptPreview from "../../components/ReceiptPreview";
-import { Flame, RefreshCw, Plus, ShoppingCart, ArrowLeftRight, X, Printer, Search, Eye } from "lucide-react";
+import {
+  ArrowLeftRight,
+  Boxes,
+  Eye,
+  Flame,
+  History,
+  LayoutDashboard,
+  Plus,
+  Printer,
+  RefreshCw,
+  Search,
+  Settings2,
+  ShoppingCart,
+  Truck,
+  X,
+} from "lucide-react";
 
 const list = (data) => Array.isArray(data) ? data : data?.results || [];
 const money = (value) => `KSh ${Number(value || 0).toLocaleString("en-KE", { minimumFractionDigits: 2 })}`;
+const paymentOptions = [
+  ["CASH", "Cash"],
+  ["MPESA", "M-Pesa"],
+  ["BANK", "Bank"],
+  ["CARD", "Card"],
+  ["OTHER", "Other"],
+];
+const getAmountDue = (subtotal, settings) => {
+  const amount = Number(subtotal || 0);
+  if (!settings?.tax_enabled || settings.prices_include_tax) return amount;
+  const scaledTaxCents = amount * Number(settings.tax_rate || 0);
+  const lowerTaxCents = Math.floor(scaledTaxCents);
+  const fraction = scaledTaxCents - lowerTaxCents;
+  const taxCents = Math.abs(fraction - 0.5) < 1e-8
+    ? lowerTaxCents + (lowerTaxCents % 2)
+    : Math.round(scaledTaxCents);
+  const tax = taxCents / 100;
+  return Number((amount + tax).toFixed(2));
+};
+const buildSplitPayments = (enabled, payments, total) => {
+  if (!enabled) return { payments: undefined };
+  const normalized = payments.map((payment) => ({
+    payment_method: payment.payment_method,
+    amount: Number(payment.amount || 0),
+    transaction_reference: payment.transaction_reference.trim(),
+  }));
+  if (normalized.some((payment) => !payment.payment_method || !Number.isFinite(payment.amount) || payment.amount <= 0)) {
+    return { error: "Enter an amount greater than zero for every payment method." };
+  }
+  const allocatedCents = normalized.reduce(
+    (sum, payment) => sum + Math.round(payment.amount * 100),
+    0
+  );
+  if (allocatedCents !== Math.round(total * 100)) {
+    return { error: "Payment amounts must add up exactly to the total due." };
+  }
+  if (normalized.some(
+    (payment) => payment.payment_method === "MPESA" && !payment.transaction_reference
+  )) {
+    return { error: "Enter the M-Pesa transaction reference for each M-Pesa payment." };
+  }
+  return { payments: normalized };
+};
+const createPaymentRow = (paymentMethod = "CASH", amount = "0.00", transactionReference = "") => ({
+  id: `${Date.now()}-${Math.random()}`,
+  payment_method: paymentMethod,
+  amount,
+  transaction_reference: transactionReference,
+});
 const dateTimeMillis = (value) => {
   if (!value) return "—";
   const date = new Date(value);
@@ -52,10 +116,17 @@ const buildGasReceipt = (transaction, label) => {
       : String(Number(total) + Number(transaction.tax_amount || 0)),
     sync_status: "SYNCHRONIZED",
     items: accessoryItems.length ? [cylinderItem, ...accessoryItems] : [cylinderItem],
-    payments: transaction.payment_method ? [{
+    payments: transaction.payments?.length ? transaction.payments.map((payment) => ({
+      id: payment.id,
+      payment_method: payment.payment_method,
+      amount: payment.amount,
+      transaction_reference: payment.transaction_reference,
+    })) : transaction.payment_method ? [{
       id: `${transaction.reference}-payment`,
       payment_method: transaction.payment_method,
-      amount: total,
+      amount: transaction.tax_included
+        ? total
+        : String(Number(total) + Number(transaction.tax_amount || 0)),
       transaction_reference: transaction.transaction_reference,
     }] : [],
   };
@@ -74,6 +145,7 @@ export default function Gas() {
   const [stock, setStock] = useState([]);
   const [movements, setMovements] = useState([]);
   const [report, setReport] = useState(null);
+  const [businessSettings, setBusinessSettings] = useState(null);
   const [refills, setRefills] = useState([]);
   const [exchanges, setExchanges] = useState([]);
   const [gasSales, setGasSales] = useState([]);
@@ -97,6 +169,12 @@ export default function Gas() {
   const [refill, setRefill] = useState({ location: "", brand: "", customer_brand: "", size: "", quantity: "1", refill_price: "", payment_method: "", customer_name: "", customer_phone: "", transaction_reference: "" });
   const [exchange, setExchange] = useState({ location: "", brand: "", size: "", quantity: "1", refill_payment: "", payment_method: "", customer_name: "", customer_phone: "", transaction_reference: "" });
   const [sale, setSale] = useState({ location: "", brand: "", size: "", status: "FULL", quantity: "1", selling_price: "", deposit_amount: "", includes_gas: true, payment_method: "", customer_name: "", customer_phone: "", transaction_reference: "", accessories: "" });
+  const [refillSplitMode, setRefillSplitMode] = useState(false);
+  const [refillPayments, setRefillPayments] = useState([createPaymentRow()]);
+  const [exchangeSplitMode, setExchangeSplitMode] = useState(false);
+  const [exchangePayments, setExchangePayments] = useState([createPaymentRow()]);
+  const [saleSplitMode, setSaleSplitMode] = useState(false);
+  const [salePayments, setSalePayments] = useState([createPaymentRow()]);
   const [saleAccessories, setSaleAccessories] = useState([{ product: "", quantity: "1" }]);
   const [purchase, setPurchase] = useState({ location: "", supplier: "", brand: "", size: "", full_cylinders_received: "0", empty_cylinders_returned: "0", purchase_price: "", delivery_date: "", invoice_reference: "", compliance_reference: "" });
 
@@ -114,6 +192,41 @@ export default function Gas() {
   }, 0);
   const completeSaleTotal =
     Number(sale.selling_price || 0) * Number(sale.quantity || 0) + accessoryTotal;
+  const gasSalesTotal = [
+    ...refills.map((item) => ({
+      amount: item.total_amount,
+      tax: item.tax_amount,
+      included: item.tax_included,
+    })),
+    ...exchanges.map((item) => ({
+      amount: item.refill_payment,
+      tax: item.tax_amount,
+      included: item.tax_included,
+    })),
+    ...gasSales.map((item) => ({
+      amount: item.total_amount,
+      tax: item.tax_amount,
+      included: item.tax_included,
+    })),
+  ].reduce(
+    (total, item) =>
+      total + Number(item.amount || 0) +
+      (item.included ? 0 : Number(item.tax || 0)),
+    0
+  );
+  const refillAmountDue = getAmountDue(
+    Number(refill.refill_price || 0) * Number(refill.quantity || 0),
+    businessSettings
+  );
+  const exchangeAmountDue = getAmountDue(
+    Number(exchange.refill_payment || 0),
+    businessSettings
+  );
+  const saleAmountDue = getAmountDue(
+    Number(sale.selling_price || 0) * Number(sale.quantity || 0) +
+      (sale.status === "COMPLETE" ? accessoryTotal : 0),
+    businessSettings
+  );
 
   const load = async () => {
     setError("");
@@ -128,7 +241,7 @@ export default function Gas() {
       if (stockFilter.location) stockParams.location = stockFilter.location;
       if (stockFilter.brand) stockParams.brand = stockFilter.brand;
       if (stockFilter.size) stockParams.size = stockFilter.size;
-      const [brandsR, sizesR, locationsR, suppliersR, productsR, stockR, reportR, movementsR, refillsR, exchangesR, salesR] = await Promise.all([
+      const [brandsR, sizesR, locationsR, suppliersR, productsR, stockR, reportR, movementsR, refillsR, exchangesR, salesR, settingsR] = await Promise.all([
         api.get("/gas/brands/"), api.get("/gas/sizes/"), api.get("/inventory/locations/"),
         api.get("/purchases/suppliers/"), api.get("/products/products/"),
         api.get("/gas/stock/", { params: stockParams }), api.get("/gas/reports/"),
@@ -136,10 +249,12 @@ export default function Gas() {
         api.get("/gas/refills/", { params: salesParams }),
         api.get("/gas/exchanges/", { params: salesParams }),
         api.get("/gas/sales/", { params: salesParams }),
+        api.get("/configuration/settings/"),
       ]);
       setBrands(list(brandsR.data)); setSizes(list(sizesR.data)); setLocations(list(locationsR.data));
       setSuppliers(list(suppliersR.data)); setProducts(list(productsR.data));
       setStock(list(stockR.data)); setReport(reportR.data);
+      setBusinessSettings(settingsR.data);
       setMovements(list(movementsR.data));
       setRefills(list(refillsR.data)); setExchanges(list(exchangesR.data)); setGasSales(list(salesR.data));
     } catch {
@@ -208,26 +323,81 @@ export default function Gas() {
   };
 
   const tabs = [
-    ["overview", "Overview"], ["refill", "Gas refill"], ["exchange", "Empty exchange"],
-    ["sale", "New cylinder sale"], ["purchase", "Gas purchase"], ["stock", "Record stock"],
-    ["sales", "Sales history"], ["setup", "Brands & sizes"],
-  ].filter(([id]) =>
+    { id: "overview", label: "Overview", hint: "Stock & alerts", icon: LayoutDashboard },
+    { id: "refill", label: "Gas refill", hint: "Refill a cylinder", icon: RefreshCw },
+    { id: "exchange", label: "Empty exchange", hint: "Swap cylinders", icon: ArrowLeftRight },
+    { id: "sale", label: "New cylinder sale", hint: "Sell a cylinder", icon: ShoppingCart },
+    { id: "purchase", label: "Gas purchase", hint: "Receive stock", icon: Truck },
+    { id: "sales", label: "Sales history", hint: "Review transactions", icon: History },
+    { id: "stock", label: "Record stock", hint: "Adjust quantities", icon: Boxes },
+    { id: "setup", label: "Brands & sizes", hint: "Manage catalogue", icon: Settings2 },
+  ].filter(({ id }) =>
     id === "purchase"
       ? canReceiveGas
       : canManageGas || !["stock", "setup"].includes(id)
   );
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h1 className="flex items-center gap-2 text-2xl font-bold text-slate-800"><Flame className="text-orange-500" /> Gas & LPG</h1><p className="text-sm text-slate-500">Refills, exchanges, cylinder stock and gas purchases</p></div>
-        <button onClick={load} className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm"><RefreshCw size={16}/>Refresh</button>
-      </div>
-      {message && <div className="rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div>}
-      {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
-      <div className="flex gap-2 overflow-x-auto border-b">
-        {tabs.map(([id, label]) => <button key={id} onClick={() => setTab(id)} className={`px-4 py-3 text-sm font-medium ${tab === id ? "border-b-2 border-blue-600 text-blue-700" : "text-slate-500"}`}>{label}</button>)}
-      </div>
+    <div className="space-y-6 pb-6">
+      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-6 text-white shadow-xl sm:p-8">
+        <div className="absolute -right-12 -top-20 h-64 w-64 rounded-full bg-orange-400/10 blur-3xl" />
+        <div className="relative flex flex-wrap items-end justify-between gap-6">
+          <div className="max-w-2xl">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-orange-200">
+              <Flame size={14} /> LPG operations
+            </div>
+            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Gas & LPG</h1>
+            <p className="mt-2 text-sm leading-6 text-slate-300 sm:text-base">
+              Manage refills, cylinder exchanges, sales, purchases and stock from one place.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="hidden rounded-2xl border border-white/10 bg-white/5 px-4 py-3 sm:block">
+              <p className="text-xs text-slate-400">Stock alerts</p>
+              <p className="mt-1 font-semibold">
+                {report?.low_stock_alerts?.length || 0} low · {report?.inspection_alerts?.length || 0} inspections
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={load}
+              className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-orange-50"
+            >
+              <RefreshCw size={16} /> Refresh
+            </button>
+          </div>
+        </div>
+      </section>
+      {message && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">{message}</div>}
+      {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">{error}</div>}
+      <nav aria-label="Gas and LPG sections" className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+        {tabs.map(({ id, label, hint, icon: Icon }) => {
+          const active = tab === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              aria-current={active ? "page" : undefined}
+              onClick={() => setTab(id)}
+              className={`group flex min-h-20 items-center gap-3 rounded-2xl border p-3 text-left transition duration-150 sm:p-4 ${
+                active
+                  ? "border-blue-700 bg-blue-700 text-white shadow-lg shadow-blue-900/15"
+                  : "border-slate-200 bg-white text-slate-700 shadow-sm hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50/60 hover:shadow-md"
+              }`}
+            >
+              <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${
+                active ? "bg-white/15 text-orange-100" : "bg-slate-100 text-slate-600 group-hover:bg-white"
+              }`}>
+                <Icon size={19} />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold leading-5">{label}</span>
+                <span className={`mt-0.5 block truncate text-xs ${active ? "text-blue-100" : "text-slate-500"}`}>{hint}</span>
+              </span>
+            </button>
+          );
+        })}
+      </nav>
 
       {tab === "overview" && (
         <div className="space-y-6">
@@ -298,17 +468,45 @@ export default function Gas() {
           <p className="mb-4 text-sm text-slate-600">
             Record the empty cylinder brand received and the full cylinder brand supplied. If the brands differ, stock records the empty under the customer’s brand and the full cylinder under the supplied brand.
           </p>
-          <form onSubmit={async (e) => { e.preventDefault(); const recorded = await create("/gas/refills/create_refill/", { ...refill, customer_brand: refill.customer_brand || refill.brand, quantity: Number(refill.quantity), refill_price: refill.refill_price }, "Gas refill recorded."); if (recorded) setReceiptSale(buildGasReceipt(recorded, "GAS REFILL")); }} className="grid gap-3 md:grid-cols-3">
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            const paymentPayload = buildSplitPayments(
+              refillSplitMode,
+              refillPayments,
+              refillAmountDue
+            );
+            if (paymentPayload.error) {
+              setError(paymentPayload.error);
+              return;
+            }
+            const recorded = await create("/gas/refills/create_refill/", {
+              ...refill,
+              ...(paymentPayload.payments ? { payments: paymentPayload.payments } : {}),
+              customer_brand: refill.customer_brand || refill.brand,
+              quantity: Number(refill.quantity),
+              refill_price: refill.refill_price,
+            }, "Gas refill recorded.");
+            if (recorded) setReceiptSale(buildGasReceipt(recorded, "GAS REFILL"));
+          }} className="grid gap-3 md:grid-cols-3">
             <Select value={refill.location} onChange={(v) => setRefill({...refill, location: v})} label="Location" options={locations.map(x => [x.id, x.name])}/>
             <Select value={refill.customer_brand} onChange={(v) => setRefill({...refill, customer_brand: v})} label="Customer's empty cylinder brand" options={brands.map(x => [x.id, x.name])}/>
             <Select value={refill.brand} onChange={(v) => setRefill({...refill, brand: v, customer_brand: refill.customer_brand || v})} label="Full cylinder brand supplied" options={brands.map(x => [x.id, x.name])}/>
             <Select value={refill.size} onChange={(v) => setRefill({...refill, size: v})} label="Cylinder size" options={sizes.map(x => [x.id, x.name])}/>
             <Input label="Quantity" type="number" value={refill.quantity} onChange={(v) => setRefill({...refill, quantity: v})}/>
             <Input label="Refill price" type="number" value={refill.refill_price} onChange={(v) => setRefill({...refill, refill_price: v})}/>
-            <Select required={false} value={refill.payment_method} onChange={(v) => setRefill({...refill, payment_method: v})} label="Payment method (optional)" options={[["CASH","Cash"],["MPESA","M-Pesa"],["BANK","Bank"],["CARD","Card"],["OTHER","Other"]]}/>
+            <PaymentFields
+              paymentMethod={refill.payment_method}
+              onPaymentMethodChange={(value) => setRefill({...refill, payment_method: value})}
+              transactionReference={refill.transaction_reference}
+              onTransactionReferenceChange={(value) => setRefill({...refill, transaction_reference: value})}
+              splitMode={refillSplitMode}
+              onSplitModeChange={setRefillSplitMode}
+              payments={refillPayments}
+              onPaymentsChange={setRefillPayments}
+              totalDue={refillAmountDue}
+            />
             <Input required={false} label="Customer name (optional)" value={refill.customer_name} onChange={(v) => setRefill({...refill, customer_name: v})}/>
             <Input required={false} label="Customer phone (optional)" value={refill.customer_phone} onChange={(v) => setRefill({...refill, customer_phone: v})}/>
-            <Input required={false} label="Payment reference (optional)" value={refill.transaction_reference} onChange={(v) => setRefill({...refill, transaction_reference: v})}/>
             <Submit label="Record refill"/>
           </form>
         </Card>
@@ -319,16 +517,43 @@ export default function Gas() {
           <div className="mb-4 rounded-lg bg-blue-50 p-3 text-sm text-blue-800">
             Exchange records the customer’s empty cylinder into empty stock and issues one full cylinder from full stock. For example, a 13kg Total exchange changes Full by -1 and Empty by +1. It will be rejected if there is not enough full stock.
           </div>
-          <form onSubmit={async (e) => { e.preventDefault(); const recorded = await create("/gas/exchanges/create_exchange/", { ...exchange, quantity: Number(exchange.quantity), refill_payment: exchange.refill_payment }, "Cylinder exchange recorded."); if (recorded) setReceiptSale(buildGasReceipt(recorded, "CYLINDER EXCHANGE")); }} className="grid gap-3 md:grid-cols-3">
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            const paymentPayload = buildSplitPayments(
+              exchangeSplitMode,
+              exchangePayments,
+              exchangeAmountDue
+            );
+            if (paymentPayload.error) {
+              setError(paymentPayload.error);
+              return;
+            }
+            const recorded = await create("/gas/exchanges/create_exchange/", {
+              ...exchange,
+              ...(paymentPayload.payments ? { payments: paymentPayload.payments } : {}),
+              quantity: Number(exchange.quantity),
+              refill_payment: exchange.refill_payment,
+            }, "Cylinder exchange recorded.");
+            if (recorded) setReceiptSale(buildGasReceipt(recorded, "CYLINDER EXCHANGE"));
+          }} className="grid gap-3 md:grid-cols-3">
             <Select value={exchange.location} onChange={(v) => setExchange({...exchange, location: v})} label="Location" options={locations.map(x => [x.id, x.name])}/>
             <Select value={exchange.brand} onChange={(v) => setExchange({...exchange, brand: v})} label="Gas brand" options={brands.map(x => [x.id, x.name])}/>
             <Select value={exchange.size} onChange={(v) => setExchange({...exchange, size: v})} label="Cylinder size" options={sizes.map(x => [x.id, x.name])}/>
             <Input label="Quantity" type="number" value={exchange.quantity} onChange={(v) => setExchange({...exchange, quantity: v})}/>
             <Input label="Refill/payment amount" type="number" value={exchange.refill_payment} onChange={(v) => setExchange({...exchange, refill_payment: v})}/>
-            <Select required={false} value={exchange.payment_method} onChange={(v) => setExchange({...exchange, payment_method: v})} label="Payment method (optional)" options={[["CASH","Cash"],["MPESA","M-Pesa"],["BANK","Bank"],["CARD","Card"],["OTHER","Other"]]}/>
+            <PaymentFields
+              paymentMethod={exchange.payment_method}
+              onPaymentMethodChange={(value) => setExchange({...exchange, payment_method: value})}
+              transactionReference={exchange.transaction_reference}
+              onTransactionReferenceChange={(value) => setExchange({...exchange, transaction_reference: value})}
+              splitMode={exchangeSplitMode}
+              onSplitModeChange={setExchangeSplitMode}
+              payments={exchangePayments}
+              onPaymentsChange={setExchangePayments}
+              totalDue={exchangeAmountDue}
+            />
             <Input required={false} label="Customer name (optional)" value={exchange.customer_name} onChange={(v) => setExchange({...exchange, customer_name: v})}/>
             <Input required={false} label="Customer phone (optional)" value={exchange.customer_phone} onChange={(v) => setExchange({...exchange, customer_phone: v})}/>
-            <Input required={false} label="Payment reference (optional)" value={exchange.transaction_reference} onChange={(v) => setExchange({...exchange, transaction_reference: v})}/>
             <Submit label="Record exchange"/>
           </form>
         </Card>
@@ -338,8 +563,18 @@ export default function Gas() {
         <Card title="Sell a new or complete cylinder">
           <form onSubmit={async (e) => {
             e.preventDefault();
+            const paymentPayload = buildSplitPayments(
+              saleSplitMode,
+              salePayments,
+              saleAmountDue
+            );
+            if (paymentPayload.error) {
+              setError(paymentPayload.error);
+              return;
+            }
             const recorded = await create("/gas/sales/create_sale/", {
               ...sale,
+              ...(paymentPayload.payments ? { payments: paymentPayload.payments } : {}),
               quantity: Number(sale.quantity),
               selling_price: sale.selling_price,
               deposit_amount: sale.deposit_amount || "0",
@@ -371,7 +606,17 @@ export default function Gas() {
             <Input label="Quantity" type="number" min="1" step="1" value={sale.quantity} onChange={(v) => setSale({...sale, quantity: v})}/>
             <Input label={sale.status === "COMPLETE" ? "Cylinder selling price (each)" : "Selling price"} type="number" min="0" step="0.01" value={sale.selling_price} onChange={(v) => setSale({...sale, selling_price: v})}/>
             <Input required={false} label="Deposit (optional)" type="number" value={sale.deposit_amount} onChange={(v) => setSale({...sale, deposit_amount: v})}/>
-            <Select required={false} value={sale.payment_method} onChange={(v) => setSale({...sale, payment_method: v})} label="Payment method (optional)" options={[["CASH","Cash"],["MPESA","M-Pesa"],["BANK","Bank"],["CARD","Card"],["OTHER","Other"]]}/>
+            <PaymentFields
+              paymentMethod={sale.payment_method}
+              onPaymentMethodChange={(value) => setSale({...sale, payment_method: value})}
+              transactionReference={sale.transaction_reference}
+              onTransactionReferenceChange={(value) => setSale({...sale, transaction_reference: value})}
+              splitMode={saleSplitMode}
+              onSplitModeChange={setSaleSplitMode}
+              payments={salePayments}
+              onPaymentsChange={setSalePayments}
+              totalDue={saleAmountDue}
+            />
             <Input required={false} label="Customer name (optional)" value={sale.customer_name} onChange={(v) => setSale({...sale, customer_name: v})}/>
             <Input required={false} label="Customer phone (optional)" value={sale.customer_phone} onChange={(v) => setSale({...sale, customer_phone: v})}/>
             <label className="flex items-center gap-2 rounded-lg border p-3">
@@ -548,19 +793,25 @@ export default function Gas() {
             </div>
             <button type="button" onClick={load} className="mt-3 inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"><Search size={14}/> Apply sales filters</button>
           </Card>
-          <Card title="Refills">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Metric title="Transactions shown" value={refills.length + exchanges.length + gasSales.length} icon={History}/>
+            <Metric title="Refills" value={refills.length} icon={RefreshCw}/>
+            <Metric title="Exchanges" value={exchanges.length} icon={ArrowLeftRight}/>
+            <Metric title="Total sales value" value={money(gasSalesTotal)} icon={ShoppingCart}/>
+          </div>
+          <Card title={`Refills · ${refills.length}`}>
             <Table headers={["Date", "Reference", "Cashier", "Location", "Brand", "Size", "Quantity", "Tax", "Amount", "Actions"]}>
               {refills.map((item) => <tr key={item.id} className="border-t"><td>{dateTimeMillis(item.created_at)}</td><td>{item.reference}</td><td>{item.recorded_by_name || "—"}</td><td>{item.location_name}</td><td>{item.brand_name}</td><td>{item.size_name}</td><td>{item.quantity}</td><td>{money(item.tax_amount)}</td><td>{money(item.tax_included ? item.total_amount : Number(item.total_amount) + Number(item.tax_amount || 0))}</td><td><div className="flex items-center gap-2"><button type="button" onClick={() => setSelectedGasSale({ type: "REFILL", data: item })} className="inline-flex items-center gap-1 text-blue-700"><Eye size={14}/> View</button><button type="button" onClick={() => setReceiptSale(buildGasReceipt(item, "GAS REFILL"))} className="inline-flex items-center gap-1 text-slate-700"><Printer size={14}/> Print</button></div></td></tr>)}
               {!refills.length && <tr><td colSpan="10" className="py-3 text-slate-500">No refills found</td></tr>}
             </Table>
           </Card>
-          <Card title="Cylinder exchanges">
+          <Card title={`Cylinder exchanges · ${exchanges.length}`}>
             <Table headers={["Date", "Reference", "Cashier", "Location", "Brand", "Size", "Quantity", "Tax", "Payment", "Actions"]}>
               {exchanges.map((item) => <tr key={item.id} className="border-t"><td>{dateTimeMillis(item.created_at)}</td><td>{item.reference}</td><td>{item.recorded_by_name || "—"}</td><td>{item.location_name}</td><td>{item.brand_name}</td><td>{item.size_name}</td><td>{item.quantity}</td><td>{money(item.tax_amount)}</td><td>{money(item.tax_included ? item.refill_payment : Number(item.refill_payment) + Number(item.tax_amount || 0))}</td><td><div className="flex items-center gap-2"><button type="button" onClick={() => setSelectedGasSale({ type: "EXCHANGE", data: item })} className="inline-flex items-center gap-1 text-blue-700"><Eye size={14}/> View</button><button type="button" onClick={() => setReceiptSale(buildGasReceipt(item, "CYLINDER EXCHANGE"))} className="inline-flex items-center gap-1 text-slate-700"><Printer size={14}/> Print</button></div></td></tr>)}
               {!exchanges.length && <tr><td colSpan="10" className="py-3 text-slate-500">No exchanges found</td></tr>}
             </Table>
           </Card>
-          <Card title="Cylinder sales">
+          <Card title={`Cylinder sales · ${gasSales.length}`}>
             <Table headers={["Date", "Reference", "Cashier", "Location", "Brand", "Size", "Status", "Quantity", "Tax", "Amount", "Actions"]}>
               {gasSales.map((item) => <tr key={item.id} className="border-t"><td>{dateTimeMillis(item.created_at)}</td><td>{item.reference}</td><td>{item.recorded_by_name || "—"}</td><td>{item.location_name}</td><td>{item.brand_name}</td><td>{item.size_name}</td><td>{item.status}</td><td>{item.quantity}</td><td>{money(item.tax_amount)}</td><td>{money(item.tax_included ? item.total_amount : Number(item.total_amount) + Number(item.tax_amount || 0))}</td><td><div className="flex items-center gap-2"><button type="button" onClick={() => setSelectedGasSale({ type: "CYLINDER SALE", data: item })} className="inline-flex items-center gap-1 text-blue-700"><Eye size={14}/> View</button><button type="button" onClick={() => setReceiptSale(buildGasReceipt(item, `${item.status} CYLINDER SALE`))} className="inline-flex items-center gap-1 text-slate-700"><Printer size={14}/> Print</button></div></td></tr>)}
               {!gasSales.length && <tr><td colSpan="11" className="py-3 text-slate-500">No cylinder sales found</td></tr>}
@@ -630,8 +881,18 @@ export default function Gas() {
                   <Detail label="Deposit" value={money(selectedGasSale.data.deposit_amount)} />
                 </>
               )}
-              <Detail label="Payment method" value={selectedGasSale.data.payment_method || "Not recorded"} />
-              <Detail label="Payment reference" value={selectedGasSale.data.transaction_reference || "—"} />
+              <Detail
+                label="Payment method"
+                value={selectedGasSale.data.payments?.length
+                  ? selectedGasSale.data.payments.map((payment) => payment.payment_method).join(", ")
+                  : selectedGasSale.data.payment_method || "Not recorded"}
+              />
+              <Detail
+                label="Payment reference"
+                value={selectedGasSale.data.payments?.length
+                  ? selectedGasSale.data.payments.map((payment) => payment.transaction_reference).filter(Boolean).join(", ") || "—"
+                  : selectedGasSale.data.transaction_reference || "—"}
+              />
               <Detail label="Tax rate" value={`${Number(selectedGasSale.data.tax_rate || 0)}%`} />
               <Detail label="Tax" value={money(selectedGasSale.data.tax_amount)} />
               {selectedGasSale.type === "REFILL" && (
@@ -680,10 +941,219 @@ export default function Gas() {
   );
 }
 
-function Metric({ title, value, icon: Icon }) { return <div className="rounded-xl border bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><p className="text-sm text-slate-500">{title}</p><Icon size={20} className="text-orange-500"/></div><p className="mt-2 text-2xl font-bold text-slate-800">{value}</p></div>; }
-function Detail({ label, value }) { return <div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 break-words font-semibold text-slate-800">{value}</p></div>; }
-function Card({ title, children }) { return <div className="rounded-xl border bg-white p-5 shadow-sm"><h2 className="mb-4 font-semibold text-slate-800">{title}</h2>{children}</div>; }
-function Input({ label, value, onChange, type = "text", required = true, min, step }) { return <label className="text-sm text-slate-600">{label}<input required={required} type={type} min={min} step={step} value={value} onChange={(e) => onChange(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5"/></label>; }
-function Select({ label, value, onChange, options, required = true }) { return <label className="text-sm text-slate-600">{label}<select required={required} value={value} onChange={(e) => onChange(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5"><option value="">Select {label.toLowerCase()}</option>{options.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>; }
-function Submit({ label }) { return <button type="submit" className="md:col-span-3 mt-2 rounded-lg bg-blue-600 px-4 py-3 font-medium text-white">{label}</button>; }
-function Table({ headers, children }) { return <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="text-slate-500">{headers.map(h => <th key={h} className="pb-3">{h}</th>)}</tr></thead><tbody>{children}</tbody></table></div>; }
+function PaymentFields({
+  paymentMethod,
+  onPaymentMethodChange,
+  transactionReference,
+  onTransactionReferenceChange,
+  splitMode,
+  onSplitModeChange,
+  payments,
+  onPaymentsChange,
+  totalDue,
+}) {
+  const toggleSplitMode = (enabled) => {
+    onSplitModeChange(enabled);
+    if (enabled) {
+      onPaymentsChange([
+        createPaymentRow(
+          paymentMethod || "CASH",
+          Number(totalDue || 0).toFixed(2),
+          transactionReference
+        ),
+      ]);
+    }
+  };
+
+  return (
+    <div className="space-y-3 rounded-lg border p-3 md:col-span-3">
+      <p className="text-sm font-semibold text-slate-700">
+        Total due (including applicable tax): {money(totalDue)}
+      </p>
+      <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+        <input
+          type="checkbox"
+          checked={splitMode}
+          onChange={(event) => toggleSplitMode(event.target.checked)}
+        />
+        Split payment across multiple methods
+      </label>
+      {splitMode ? (
+        <div className="space-y-3">
+          <p className="text-xs text-slate-600">
+            Allocate the full amount due across payment methods. M-Pesa split payments are recorded manually and require a transaction reference.
+          </p>
+          {payments.map((payment) => (
+            <div key={payment.id} className="space-y-2 rounded-lg bg-slate-50 p-3">
+              <Select
+                label="Payment method"
+                value={payment.payment_method}
+                onChange={(value) => onPaymentsChange((current) =>
+                  current.map((item) => item.id === payment.id
+                    ? { ...item, payment_method: value }
+                    : item)
+                )}
+                options={paymentOptions}
+              />
+              <Input
+                label="Amount (KSh)"
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={payment.amount}
+                onChange={(value) => onPaymentsChange((current) =>
+                  current.map((item) => item.id === payment.id
+                    ? { ...item, amount: value }
+                    : item)
+                )}
+              />
+              {payment.payment_method !== "CASH" && (
+                <Input
+                  label={`Transaction reference${payment.payment_method === "MPESA" ? " (required)" : " (optional)"}`}
+                  required={payment.payment_method === "MPESA"}
+                  value={payment.transaction_reference}
+                  onChange={(value) => onPaymentsChange((current) =>
+                    current.map((item) => item.id === payment.id
+                      ? { ...item, transaction_reference: value }
+                      : item)
+                  )}
+                />
+              )}
+              {payments.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => onPaymentsChange((current) =>
+                    current.filter((item) => item.id !== payment.id)
+                  )}
+                  className="text-sm font-medium text-red-700"
+                >
+                  Remove payment
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => {
+              const allocated = payments.reduce(
+                (sum, payment) => sum + Number(payment.amount || 0),
+                0
+              );
+              const remaining = Math.max(
+                0,
+                Number((totalDue - allocated).toFixed(2))
+              );
+              onPaymentsChange((current) => [
+                ...current,
+                createPaymentRow("BANK", remaining.toFixed(2)),
+              ]);
+            }}
+            className="w-full rounded-lg border border-blue-200 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
+          >
+            Add payment method
+          </button>
+          <p className="text-right text-sm font-semibold text-slate-700">
+            Allocated: {money(payments.reduce(
+              (sum, payment) => sum + Number(payment.amount || 0),
+              0
+            ))}
+          </p>
+        </div>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-3">
+          <Select
+            required={false}
+            label="Payment method (optional)"
+            value={paymentMethod}
+            onChange={onPaymentMethodChange}
+            options={paymentOptions}
+          />
+          {paymentMethod && paymentMethod !== "CASH" && (
+            <Input
+              label={`Payment reference${paymentMethod === "MPESA" ? " (required)" : " (optional)"}`}
+              required={paymentMethod === "MPESA"}
+              value={transactionReference}
+              onChange={onTransactionReferenceChange}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Metric({ title, value, icon: Icon }) {
+  return (
+    <div className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-medium text-slate-500">{title}</p>
+        <span className="grid h-10 w-10 place-items-center rounded-xl bg-orange-50 text-orange-600 transition group-hover:bg-orange-100">
+          <Icon size={20}/>
+        </span>
+      </div>
+      <p className="mt-4 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{value}</p>
+    </div>
+  );
+}
+function Detail({ label, value }) { return <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3"><p className="text-xs font-medium text-slate-500">{label}</p><p className="mt-1 break-words font-semibold text-slate-800">{value}</p></div>; }
+function Card({ title, children }) {
+  return (
+    <section className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <h2 className="mb-4 border-b border-slate-100 pb-3 text-base font-semibold tracking-tight text-slate-900 sm:text-lg">{title}</h2>
+      {children}
+    </section>
+  );
+}
+function Input({ label, value, onChange, type = "text", required = true, min, step }) {
+  return (
+    <label className="block min-w-0 text-sm font-medium text-slate-700">
+      {label}
+      <input
+        required={required}
+        type={type}
+        min={min}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1.5 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+      />
+    </label>
+  );
+}
+function Select({ label, value, onChange, options, required = true }) {
+  return (
+    <label className="block min-w-0 text-sm font-medium text-slate-700">
+      {label}
+      <select
+        required={required}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1.5 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+      >
+        <option value="">Select {label.toLowerCase()}</option>
+        {options.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+      </select>
+    </label>
+  );
+}
+function Submit({ label }) {
+  return (
+    <button type="submit" className="mt-2 inline-flex min-h-12 items-center justify-center rounded-xl bg-blue-700 px-5 py-3 font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-500/20 md:col-span-3">
+      {label}
+    </button>
+  );
+}
+function Table({ headers, children }) {
+  return (
+    <div className="overflow-x-auto rounded-xl border border-slate-200">
+      <table className="w-full min-w-max text-left text-sm [&_td]:px-4 [&_td]:py-3 [&_td]:align-middle">
+        <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <tr>{headers.map((header) => <th key={header} className="whitespace-nowrap px-4 py-3">{header}</th>)}</tr>
+        </thead>
+        <tbody className="[&_tr:not(:first-child)]:border-t [&_tr]:border-slate-100 [&_tr:hover]:bg-slate-50/70">
+          {children}
+        </tbody>
+      </table>
+    </div>
+  );
+}

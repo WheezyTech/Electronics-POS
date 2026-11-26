@@ -1,9 +1,11 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from .models import (
     GasBrand, GasCylinderSize, GasCylinder, GasStock, GasStockMovement,
-    GasRefill, GasExchange, GasPurchase, CylinderDeposit, NewCylinderSale,
-    NewCylinderSaleAccessory,
+    GasRefill, GasExchange, GasPurchase, CylinderDeposit, GasPayment,
+    NewCylinderSale, NewCylinderSaleAccessory,
 )
 
 
@@ -39,6 +41,47 @@ class GasStockSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+class GasPaymentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GasPayment
+        fields = [
+            "id",
+            "payment_method",
+            "amount",
+            "transaction_reference",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+
+class GasPaymentInputSerializer(serializers.Serializer):
+    payment_method = serializers.ChoiceField(
+        choices=GasPayment.PaymentMethod.choices
+    )
+    amount = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        min_value=Decimal("0.01"),
+    )
+    transaction_reference = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=100,
+    )
+
+    def validate(self, attrs):
+        if (
+            attrs["payment_method"] == GasPayment.PaymentMethod.MPESA
+            and not attrs.get("transaction_reference", "").strip()
+        ):
+            raise serializers.ValidationError({
+                "transaction_reference": (
+                    "Enter the M-Pesa reference for a manually received payment."
+                )
+            })
+        return attrs
+
+
 class GasMovementSerializer(serializers.ModelSerializer):
     brand_name = serializers.CharField(source="brand.name", read_only=True)
     size_name = serializers.CharField(source="size.name", read_only=True)
@@ -60,6 +103,7 @@ class CylinderDepositSerializer(serializers.ModelSerializer):
 
 
 class GasRefillSerializer(serializers.ModelSerializer):
+    payments = GasPaymentSerializer(many=True, read_only=True)
     brand_name = serializers.CharField(source="brand.name", read_only=True)
     customer_brand_name = serializers.CharField(
         source="customer_brand.name", read_only=True, allow_null=True
@@ -75,6 +119,7 @@ class GasRefillSerializer(serializers.ModelSerializer):
 
 
 class GasExchangeSerializer(serializers.ModelSerializer):
+    payments = GasPaymentSerializer(many=True, read_only=True)
     brand_name = serializers.CharField(source="brand.name", read_only=True)
     size_name = serializers.CharField(source="size.name", read_only=True)
     location_name = serializers.CharField(source="location.name", read_only=True)
@@ -111,6 +156,7 @@ class NewCylinderSaleAccessorySerializer(serializers.ModelSerializer):
 
 
 class NewCylinderSaleSerializer(serializers.ModelSerializer):
+    payments = GasPaymentSerializer(many=True, read_only=True)
     brand_name = serializers.CharField(source="brand.name", read_only=True)
     size_name = serializers.CharField(source="size.name", read_only=True)
     location_name = serializers.CharField(source="location.name", read_only=True)

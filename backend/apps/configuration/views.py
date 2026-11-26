@@ -100,19 +100,19 @@ class ApplicationUpdatesAPIView(APIView):
                 ),
                 "release_notes": os.getenv(
                     "ANDROID_RELEASE_NOTES",
-                    "Receipt wording and application updater improvements.",
+                    "Gas and LPG interface improvements: refreshed overview, refill, exchange, cylinder sale, gas purchase, and sales history screens.",
                 ),
                 "mandatory": os.getenv("ANDROID_UPDATE_MANDATORY", "False").lower() == "true",
             },
             "windows": {
-                "latest_version": os.getenv("WINDOWS_LATEST_VERSION", "1.0.8"),
+                "latest_version": os.getenv("WINDOWS_LATEST_VERSION", "1.0.9"),
                 "download_url": os.getenv(
                     "WINDOWS_UPDATE_URL",
                     "https://radiant-inspiration-production-77d51767.up.railway.app/downloads",
                 ),
                 "release_notes": os.getenv(
                     "WINDOWS_RELEASE_NOTES",
-                    "Receipt wording and application updater improvements.",
+                    "Gas and LPG interface improvements, including clearer operations and sales history.",
                 ),
                 "mandatory": os.getenv("WINDOWS_UPDATE_MANDATORY", "False").lower() == "true",
             },
