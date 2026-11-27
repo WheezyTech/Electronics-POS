@@ -542,11 +542,8 @@ export default function Dashboard() {
   const topProducts = report?.top_products || [];
   const paymentBreakdown = report?.payment_breakdown || [];
   const cashierPerformance = report?.cashier_performance || [];
-  const todaySales = Number(
-    todayReport?.sales?.revenue ??
-    dailySales.find((item) => item.date === todayKey)?.revenue ??
-    0
-  );
+  const gasPaymentBreakdown = report?.gas_payment_breakdown || [];
+  const gasCashierPerformance = report?.gas_cashier_performance || [];
   const todayGasSales = (() => {
     const daily = todayGasReport?.daily || {};
     return Number(daily.refill_sales || 0)
@@ -556,6 +553,7 @@ export default function Dashboard() {
   const electronicsTodaySales = Number(
     todayElectronicsReport?.sales?.revenue ?? 0
   );
+  const combinedTodaySales = electronicsTodaySales + todayGasSales;
   const inventoryStock = inventory?.stock || {};
   const totalProducts =
     inventoryStock.active_products ?? inventoryStock.products;
@@ -784,8 +782,12 @@ export default function Dashboard() {
         <section className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-5">
           <MetricCard
             label="Today's sales"
-            value={loading && !todayReport ? "..." : money(todaySales)}
-            detail="Net after approved refunds"
+            value={
+              loading && (!todayElectronicsReport || !todayGasReport)
+                ? "..."
+                : money(combinedTodaySales)
+            }
+            detail="Electronics and gas, net of electronics refunds"
             icon={ShoppingBag}
             tone="bg-blue-100 text-blue-700"
           />
@@ -1115,15 +1117,36 @@ export default function Dashboard() {
                 Amount collected by payment type
               </p>
             </div>
-            <HorizontalBarChart
-              data={paymentBreakdown}
-              labelKey="payment_method"
-              valueKey="collected"
-              chartLabel="Collected sales by payment method"
-              formatValue={money}
-              emptyMessage="No payments recorded for this period."
-              barColor="bg-emerald-500"
-            />
+            <div className="grid gap-6 md:grid-cols-2">
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-slate-700">
+                  Electronics
+                </h3>
+                <HorizontalBarChart
+                  data={paymentBreakdown}
+                  labelKey="payment_method"
+                  valueKey="collected"
+                  chartLabel="Electronics collected sales by payment method"
+                  formatValue={money}
+                  emptyMessage="No electronics payments recorded."
+                  barColor="bg-cyan-500"
+                />
+              </div>
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-slate-700">
+                  Gas &amp; LPG
+                </h3>
+                <HorizontalBarChart
+                  data={gasPaymentBreakdown}
+                  labelKey="payment_method"
+                  valueKey="collected"
+                  chartLabel="Gas collected sales by payment method"
+                  formatValue={money}
+                  emptyMessage="No gas payments recorded."
+                  barColor="bg-orange-500"
+                />
+              </div>
+            </div>
           </article>
 
           <article className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
@@ -1133,15 +1156,36 @@ export default function Dashboard() {
                 Completed sales revenue by cashier
               </p>
             </div>
-            <HorizontalBarChart
-              data={cashierPerformance.slice(0, 5)}
-              labelKey="cashier"
-              valueKey="revenue"
-              chartLabel="Sales revenue by cashier"
-              formatValue={money}
-              emptyMessage="No cashier sales recorded for this period."
-              barColor="bg-amber-500"
-            />
+            <div className="grid gap-6 md:grid-cols-2">
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-slate-700">
+                  Electronics
+                </h3>
+                <HorizontalBarChart
+                  data={cashierPerformance.slice(0, 5)}
+                  labelKey="cashier"
+                  valueKey="revenue"
+                  chartLabel="Electronics sales revenue by cashier"
+                  formatValue={money}
+                  emptyMessage="No electronics cashier sales recorded."
+                  barColor="bg-cyan-500"
+                />
+              </div>
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-slate-700">
+                  Gas &amp; LPG
+                </h3>
+                <HorizontalBarChart
+                  data={gasCashierPerformance.slice(0, 5)}
+                  labelKey="cashier"
+                  valueKey="revenue"
+                  chartLabel="Gas sales revenue by cashier"
+                  formatValue={money}
+                  emptyMessage="No gas cashier sales recorded."
+                  barColor="bg-orange-500"
+                />
+              </div>
+            </div>
           </article>
         </section>
 

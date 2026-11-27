@@ -1,8 +1,8 @@
 version: 1.0.9
 files:
-  - url: Electronics POS Setup-1.0.9.exe
+  - url: https://github.com/WheezyTech/Electronics-POS/releases/download/v1.0.9/Electronics.POS.Setup-1.0.9.exe
     sha512: dVUTIL9UdFd8hfbJj/4lcW++MYjL7jDyDe6gBaLNCXkMMg8rfGhOd6uqH7M70icB51QZK6dnB5p+vouc5H9HrQ==
     size: 132313989
-path: Electronics POS Setup-1.0.9.exe
+path: https://github.com/WheezyTech/Electronics-POS/releases/download/v1.0.9/Electronics.POS.Setup-1.0.9.exe
 sha512: dVUTIL9UdFd8hfbJj/4lcW++MYjL7jDyDe6gBaLNCXkMMg8rfGhOd6uqH7M70icB51QZK6dnB5p+vouc5H9HrQ==
 releaseDate: '2026-11-26T15:18:40.533Z'

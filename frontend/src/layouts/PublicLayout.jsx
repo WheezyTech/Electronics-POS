@@ -67,7 +67,7 @@ export default function PublicLayout() {
           </div>
           <div className="text-sm">
             <p className="font-semibold text-white">Download the app</p>
-            <a className="mt-2 block text-blue-300" href="/downloads/electronics-pos-windows.exe">Windows desktop</a>
+            <a className="mt-2 block text-blue-300" href="https://github.com/WheezyTech/Electronics-POS/releases/download/v1.0.9/Electronics.POS.Setup-1.0.9.exe">Windows desktop</a>
             <a className="mt-1 block text-green-300" href="/downloads/electronics-pos.apk">Android app</a>
           </div>
         </div>

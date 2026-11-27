@@ -42,7 +42,7 @@ export default function Home() {
         <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
           <div className="text-center"><p className="text-sm font-bold uppercase tracking-widest text-blue-700">Choose your device</p><h2 className="mt-2 text-3xl font-bold">Download Electronics POS</h2></div>
           <div className="mt-8 grid gap-5 md:grid-cols-2">
-            <DownloadCard icon={Monitor} title="Windows desktop" text="Install for cashier counters and managers. Updates are downloaded and installed automatically." href="/downloads/electronics-pos-windows.exe" button="Download for Windows" accent="blue"/>
+            <DownloadCard icon={Monitor} title="Windows desktop" text="Install for cashier counters and managers. Updates are downloaded and installed automatically." href="https://github.com/WheezyTech/Electronics-POS/releases/download/v1.0.9/Electronics.POS.Setup-1.0.9.exe" button="Download for Windows" accent="blue"/>
             <DownloadCard icon={Smartphone} title="Android" text="Use the app on compatible Android phones and tablets. Install the APK and allow an install prompt." href="/downloads/electronics-pos.apk" button="Download for Android" accent="green"/>
           </div>
         </div>

@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from django.db.models import (
-    Sum, Count, F, Q, DecimalField, ExpressionWrapper, Value
+    Sum, Count, F, Q, Case, When, DecimalField, ExpressionWrapper, Value
 )
 from django.db.models.functions import TruncDate, Coalesce
 from django.utils.dateparse import parse_date
@@ -18,6 +18,12 @@ from apps.inventory.models import StockBalance, StockLocation
 from apps.products.models import Product
 from apps.purchases.models import (
     SupplierInvoice, SupplierPayment, Supplier
+)
+from apps.gas.models import (
+    GasExchange,
+    GasPayment,
+    GasRefill,
+    NewCylinderSale,
 )
 
 from rest_framework.permissions import BasePermission
@@ -227,6 +233,94 @@ class DashboardOverviewAPIView(APIView):
             revenue=Sum("total_amount"),
         ).order_by("-revenue")
 
+        gas_payments = GasPayment.objects.all()
+        if date_from:
+            gas_payments = gas_payments.filter(
+                Q(gas_refill__created_at__date__gte=date_from)
+                | Q(gas_exchange__created_at__date__gte=date_from)
+                | Q(cylinder_sale__created_at__date__gte=date_from)
+            )
+        if date_to:
+            gas_payments = gas_payments.filter(
+                Q(gas_refill__created_at__date__lte=date_to)
+                | Q(gas_exchange__created_at__date__lte=date_to)
+                | Q(cylinder_sale__created_at__date__lte=date_to)
+            )
+        gas_payment_breakdown = gas_payments.values(
+            "payment_method"
+        ).annotate(
+            collected=Coalesce(Sum("amount"), ZERO),
+            transactions=Count("id"),
+        ).order_by("payment_method")
+
+        gas_cashier_totals = {}
+
+        def add_gas_cashier_totals(queryset, revenue_expression):
+            rows = queryset.values(
+                "recorded_by_id",
+                "recorded_by__username",
+            ).annotate(
+                transactions=Count("id"),
+                revenue=Coalesce(
+                    Sum(ExpressionWrapper(
+                        revenue_expression,
+                        output_field=MONEY_FIELD,
+                    )),
+                    ZERO,
+                ),
+            )
+            for row in rows:
+                cashier_id = row["recorded_by_id"]
+                totals_for_cashier = gas_cashier_totals.setdefault(
+                    cashier_id,
+                    {
+                        "cashier_id": cashier_id,
+                        "cashier": row["recorded_by__username"],
+                        "transactions": 0,
+                        "revenue": Decimal("0.00"),
+                    },
+                )
+                totals_for_cashier["transactions"] += row["transactions"]
+                totals_for_cashier["revenue"] += row["revenue"]
+
+        tax_if_excluded = Case(
+            When(tax_included=False, then=F("tax_amount")),
+            default=Value(Decimal("0.00"), output_field=MONEY_FIELD),
+            output_field=MONEY_FIELD,
+        )
+        gas_refills = apply_date_filter(
+            GasRefill.objects.all(),
+            "created_at",
+            date_from,
+            date_to,
+        )
+        gas_exchanges = apply_date_filter(
+            GasExchange.objects.all(),
+            "created_at",
+            date_from,
+            date_to,
+        )
+        gas_cylinder_sales = apply_date_filter(
+            NewCylinderSale.objects.all(),
+            "created_at",
+            date_from,
+            date_to,
+        )
+        add_gas_cashier_totals(
+            gas_refills,
+            F("total_amount") + tax_if_excluded,
+        )
+        add_gas_cashier_totals(
+            gas_exchanges,
+            F("refill_payment") + tax_if_excluded,
+        )
+        add_gas_cashier_totals(
+            gas_cylinder_sales,
+            F("selling_price") * F("quantity")
+            + F("accessories_total")
+            + tax_if_excluded,
+        )
+
         return Response({
             "period": {
                 "date_from": date_from,
@@ -251,6 +345,14 @@ class DashboardOverviewAPIView(APIView):
                     "refund_transactions": values["refund_transactions"],
                 }
                 for method, values in sorted(payment_breakdown.items())
+            ],
+            "gas_payment_breakdown": [
+                {
+                    "payment_method": row["payment_method"],
+                    "collected": str(row["collected"]),
+                    "transactions": row["transactions"],
+                }
+                for row in gas_payment_breakdown
             ],
             "daily_sales": [
                 {
@@ -278,6 +380,17 @@ class DashboardOverviewAPIView(APIView):
                     "revenue": str(row["revenue"]),
                 }
                 for row in cashier_performance
+            ],
+            "gas_cashier_performance": [
+                {
+                    **row,
+                    "revenue": str(row["revenue"]),
+                }
+                for row in sorted(
+                    gas_cashier_totals.values(),
+                    key=lambda item: item["revenue"],
+                    reverse=True,
+                )
             ],
         })
 
