@@ -214,6 +214,54 @@ export default function Gas() {
       (item.included ? 0 : Number(item.tax || 0)),
     0
   );
+  const gasSalesByPaymentMethod = {};
+  const gasTransactions = [
+    ...refills.map((item) => ({
+      ...item,
+      sales_amount: item.total_amount,
+    })),
+    ...exchanges.map((item) => ({
+      ...item,
+      sales_amount: item.refill_payment,
+    })),
+    ...gasSales.map((item) => ({
+      ...item,
+      sales_amount: item.total_amount,
+    })),
+  ];
+  gasTransactions.forEach((transaction) => {
+    const totalDue = Number(transaction.sales_amount || 0)
+      + (transaction.tax_included
+        ? 0
+        : Number(transaction.tax_amount || 0));
+    const recordedPayments = transaction.payments || [];
+    const recordedTotal = recordedPayments.reduce(
+      (total, payment) => total + Number(payment.amount || 0),
+      0
+    );
+    const payments = recordedPayments.length
+      ? [
+          ...recordedPayments,
+          ...(totalDue > recordedTotal
+            ? [{
+                payment_method: "NOT_RECORDED",
+                amount: totalDue - recordedTotal,
+              }]
+            : []),
+        ]
+      : transaction.payment_method
+        ? [{
+            payment_method: transaction.payment_method,
+            amount: totalDue,
+          }]
+        : [{ payment_method: "NOT_RECORDED", amount: totalDue }];
+
+    payments.forEach((payment) => {
+      gasSalesByPaymentMethod[payment.payment_method] =
+        (gasSalesByPaymentMethod[payment.payment_method] || 0)
+        + Number(payment.amount || 0);
+    });
+  });
   const refillAmountDue = getAmountDue(
     Number(refill.refill_price || 0) * Number(refill.quantity || 0),
     businessSettings
@@ -799,6 +847,23 @@ export default function Gas() {
             <Metric title="Exchanges" value={exchanges.length} icon={ArrowLeftRight}/>
             <Metric title="Total sales value" value={money(gasSalesTotal)} icon={ShoppingCart}/>
           </div>
+            <Card title="Sales by payment method">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {Object.entries(gasSalesByPaymentMethod).map(([method, amount]) => (
+                  <div key={method} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-sm font-medium text-slate-500">
+                      {method === "NOT_RECORDED"
+                        ? "Payment not recorded"
+                        : paymentOptions.find(([value]) => value === method)?.[1] || method}
+                    </p>
+                    <p className="mt-2 text-xl font-bold text-slate-900">{money(amount)}</p>
+                  </div>
+                ))}
+                {!Object.keys(gasSalesByPaymentMethod).length && (
+                  <p className="text-sm text-slate-500">No sales recorded for this filter.</p>
+                )}
+              </div>
+            </Card>
           <Card title={`Refills · ${refills.length}`}>
             <Table headers={["Date", "Reference", "Cashier", "Location", "Brand", "Size", "Quantity", "Tax", "Amount", "Actions"]}>
               {refills.map((item) => <tr key={item.id} className="border-t"><td>{dateTimeMillis(item.created_at)}</td><td>{item.reference}</td><td>{item.recorded_by_name || "—"}</td><td>{item.location_name}</td><td>{item.brand_name}</td><td>{item.size_name}</td><td>{item.quantity}</td><td>{money(item.tax_amount)}</td><td>{money(item.tax_included ? item.total_amount : Number(item.total_amount) + Number(item.tax_amount || 0))}</td><td><div className="flex items-center gap-2"><button type="button" onClick={() => setSelectedGasSale({ type: "REFILL", data: item })} className="inline-flex items-center gap-1 text-blue-700"><Eye size={14}/> View</button><button type="button" onClick={() => setReceiptSale(buildGasReceipt(item, "GAS REFILL"))} className="inline-flex items-center gap-1 text-slate-700"><Printer size={14}/> Print</button></div></td></tr>)}
@@ -1062,8 +1127,8 @@ function PaymentFields({
       ) : (
         <div className="grid gap-3 md:grid-cols-3">
           <Select
-            required={false}
-            label="Payment method (optional)"
+            required
+            label="Payment method"
             value={paymentMethod}
             onChange={onPaymentMethodChange}
             options={paymentOptions}

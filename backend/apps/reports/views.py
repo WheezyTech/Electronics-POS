@@ -1,7 +1,8 @@
 from decimal import Decimal
 
 from django.db.models import (
-    Sum, Count, F, Q, Case, When, DecimalField, ExpressionWrapper, Value
+    Sum, Count, F, Q, Case, When, OuterRef, Subquery, CharField,
+    DecimalField, ExpressionWrapper, Value
 )
 from django.db.models.functions import TruncDate, Coalesce
 from django.utils.dateparse import parse_date
@@ -233,6 +234,24 @@ class DashboardOverviewAPIView(APIView):
             revenue=Sum("total_amount"),
         ).order_by("-revenue")
 
+        gas_refills = apply_date_filter(
+            GasRefill.objects.all(),
+            "created_at",
+            date_from,
+            date_to,
+        )
+        gas_exchanges = apply_date_filter(
+            GasExchange.objects.all(),
+            "created_at",
+            date_from,
+            date_to,
+        )
+        gas_cylinder_sales = apply_date_filter(
+            NewCylinderSale.objects.all(),
+            "created_at",
+            date_from,
+            date_to,
+        )
         gas_payments = GasPayment.objects.all()
         if date_from:
             gas_payments = gas_payments.filter(
@@ -246,12 +265,94 @@ class DashboardOverviewAPIView(APIView):
                 | Q(gas_exchange__created_at__date__lte=date_to)
                 | Q(cylinder_sale__created_at__date__lte=date_to)
             )
-        gas_payment_breakdown = gas_payments.values(
-            "payment_method"
-        ).annotate(
+        gas_payment_totals = gas_payments.values("payment_method").annotate(
             collected=Coalesce(Sum("amount"), ZERO),
             transactions=Count("id"),
-        ).order_by("payment_method")
+        )
+        gas_payment_breakdown = {
+            row["payment_method"]: {
+                "collected": row["collected"],
+                "transactions": row["transactions"],
+            }
+            for row in gas_payment_totals
+        }
+
+        tax_if_excluded = Case(
+            When(tax_included=False, then=F("tax_amount")),
+            default=Value(Decimal("0.00"), output_field=MONEY_FIELD),
+            output_field=MONEY_FIELD,
+        )
+
+        def add_unallocated_transaction_payments(
+            queryset,
+            payment_relation_id,
+            amount_expression,
+        ):
+            payment_totals = GasPayment.objects.filter(
+                **{payment_relation_id: OuterRef("pk")}
+            ).order_by().values(payment_relation_id).annotate(
+                payment_total=Sum("amount"),
+            ).values("payment_total")[:1]
+            transactions_with_balance = queryset.annotate(
+                recorded_payments=Coalesce(
+                    Subquery(payment_totals, output_field=MONEY_FIELD),
+                    ZERO,
+                ),
+                amount_due=ExpressionWrapper(
+                    amount_expression,
+                    output_field=MONEY_FIELD,
+                ),
+            ).annotate(
+                unallocated=ExpressionWrapper(
+                    F("amount_due") - F("recorded_payments"),
+                    output_field=MONEY_FIELD,
+                ),
+            ).filter(unallocated__gt=0).annotate(
+                payment_method_label=Case(
+                    When(
+                        recorded_payments=0,
+                        payment_method__gt="",
+                        then=F("payment_method"),
+                    ),
+                    default=Value("Not recorded"),
+                    output_field=CharField(),
+                ),
+            )
+            rows = transactions_with_balance.values(
+                "payment_method_label"
+            ).annotate(
+                collected=Coalesce(Sum("unallocated"), ZERO),
+                transactions=Count("id"),
+            )
+            for row in rows:
+                method = row["payment_method_label"]
+                totals_for_method = gas_payment_breakdown.setdefault(
+                    method,
+                    {
+                        "collected": Decimal("0.00"),
+                        "transactions": 0,
+                    },
+                )
+                totals_for_method["collected"] += row["collected"]
+                totals_for_method["transactions"] += row["transactions"]
+
+        add_unallocated_transaction_payments(
+            gas_refills,
+            "gas_refill_id",
+            F("total_amount") + tax_if_excluded,
+        )
+        add_unallocated_transaction_payments(
+            gas_exchanges,
+            "gas_exchange_id",
+            F("refill_payment") + tax_if_excluded,
+        )
+        add_unallocated_transaction_payments(
+            gas_cylinder_sales,
+            "cylinder_sale_id",
+            F("selling_price") * F("quantity")
+            + F("accessories_total")
+            + tax_if_excluded,
+        )
 
         gas_cashier_totals = {}
 
@@ -283,29 +384,6 @@ class DashboardOverviewAPIView(APIView):
                 totals_for_cashier["transactions"] += row["transactions"]
                 totals_for_cashier["revenue"] += row["revenue"]
 
-        tax_if_excluded = Case(
-            When(tax_included=False, then=F("tax_amount")),
-            default=Value(Decimal("0.00"), output_field=MONEY_FIELD),
-            output_field=MONEY_FIELD,
-        )
-        gas_refills = apply_date_filter(
-            GasRefill.objects.all(),
-            "created_at",
-            date_from,
-            date_to,
-        )
-        gas_exchanges = apply_date_filter(
-            GasExchange.objects.all(),
-            "created_at",
-            date_from,
-            date_to,
-        )
-        gas_cylinder_sales = apply_date_filter(
-            NewCylinderSale.objects.all(),
-            "created_at",
-            date_from,
-            date_to,
-        )
         add_gas_cashier_totals(
             gas_refills,
             F("total_amount") + tax_if_excluded,
@@ -348,11 +426,11 @@ class DashboardOverviewAPIView(APIView):
             ],
             "gas_payment_breakdown": [
                 {
-                    "payment_method": row["payment_method"],
-                    "collected": str(row["collected"]),
-                    "transactions": row["transactions"],
+                    "payment_method": method,
+                    "collected": str(values["collected"]),
+                    "transactions": values["transactions"],
                 }
-                for row in gas_payment_breakdown
+                for method, values in sorted(gas_payment_breakdown.items())
             ],
             "daily_sales": [
                 {

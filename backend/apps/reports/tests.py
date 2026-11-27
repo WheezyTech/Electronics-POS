@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
@@ -144,30 +146,70 @@ class DashboardRefundAccountingTests(APITestCase):
             received_by=self.cashier,
             created_at=self.completed_at,
         )
+        GasRefill.objects.create(
+            reference="DASH-REFILL-LEGACY",
+            location=self.location,
+            brand=brand,
+            size=size,
+            refill_price="50.00",
+            total_amount="50.00",
+            tax_amount="8.00",
+            tax_included=False,
+            payment_method="BANK",
+            recorded_by=self.cashier,
+            created_at=self.completed_at,
+        )
+        partially_paid_refill = GasRefill.objects.create(
+            reference="DASH-REFILL-PARTIAL",
+            location=self.location,
+            brand=brand,
+            size=size,
+            refill_price="40.00",
+            total_amount="40.00",
+            recorded_by=self.cashier,
+            created_at=self.completed_at,
+        )
+        GasPayment.objects.create(
+            gas_refill=partially_paid_refill,
+            payment_method=GasPayment.PaymentMethod.CASH,
+            amount="10.00",
+            received_by=self.cashier,
+            created_at=self.completed_at,
+        )
+        GasExchange.objects.create(
+            reference="DASH-EXCHANGE-UNRECORDED",
+            location=self.location,
+            brand=brand,
+            size=size,
+            customer_name="",
+            refill_payment="5.00",
+            recorded_by=self.cashier,
+            created_at=self.completed_at,
+        )
 
         self.client.force_authenticate(user=self.manager)
         response = self.client.get(reverse("dashboard"))
 
         self.assertEqual(response.status_code, 200)
+        gas_breakdown = {
+            row["payment_method"]: row
+            for row in response.data["gas_payment_breakdown"]
+        }
+        self.assertEqual(gas_breakdown["CASH"]["collected"], "30.00")
+        self.assertEqual(gas_breakdown["MPESA"]["collected"], "80.00")
+        self.assertEqual(gas_breakdown["BANK"]["collected"], "58.00")
+        self.assertEqual(gas_breakdown["Not recorded"]["collected"], "35.00")
         self.assertEqual(
-            response.data["gas_payment_breakdown"],
-            [
-                {
-                    "payment_method": "CASH",
-                    "collected": "20.00",
-                    "transactions": 1,
-                },
-                {
-                    "payment_method": "MPESA",
-                    "collected": "80.00",
-                    "transactions": 1,
-                },
-            ],
+            sum(
+                Decimal(row["collected"])
+                for row in response.data["gas_payment_breakdown"]
+            ),
+            Decimal("203.00"),
         )
         gas_cashier = response.data["gas_cashier_performance"][0]
         self.assertEqual(gas_cashier["cashier"], self.cashier.username)
-        self.assertEqual(gas_cashier["transactions"], 2)
-        self.assertEqual(gas_cashier["revenue"], "100.00")
+        self.assertEqual(gas_cashier["transactions"], 5)
+        self.assertEqual(gas_cashier["revenue"], "203.00")
         self.assertEqual(
             response.data["cashier_performance"][0]["cashier"],
             self.cashier.username,

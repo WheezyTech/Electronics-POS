@@ -56,7 +56,9 @@ def validate_gas_payments(data, amount_due):
     if "payments" not in data:
         payment_method = data.get("payment_method", "")
         if not payment_method:
-            return None
+            raise ValidationError({
+                "payment_method": "Select a payment method for this gas sale."
+            })
         payment_data = [{
             "payment_method": payment_method,
             "amount": amount_due,

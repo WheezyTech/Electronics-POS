@@ -143,6 +143,7 @@ class GasExchangeTests(TestCase):
                 "size": self.size.pk,
                 "quantity": 1,
                 "refill_payment": "800.00",
+                "payment_method": "CASH",
             },
             format="json",
         )
@@ -150,7 +151,7 @@ class GasExchangeTests(TestCase):
         self.assertEqual(response.status_code, 201)
         exchange = GasExchange.objects.get()
         self.assertEqual(exchange.customer_name, "")
-        self.assertEqual(exchange.payment_method, "")
+        self.assertEqual(exchange.payment_method, "CASH")
         stock.refresh_from_db()
         self.assertEqual(stock.full_quantity, 1)
         self.assertEqual(stock.empty_quantity, 5)
@@ -160,6 +161,58 @@ class GasExchangeTests(TestCase):
             for movement in GasStockMovement.objects.all()
         }
         self.assertEqual(movements, {"FULL": -1, "EMPTY": 1})
+
+    def test_refill_exchange_and_cylinder_sale_require_payment_method(self):
+        GasStock.objects.create(
+            location=self.location,
+            brand=self.brand,
+            size=self.size,
+            full_quantity=3,
+        )
+        requests = [
+            (
+                "/api/gas/refills/create_refill/",
+                {
+                    "location": self.location.pk,
+                    "brand": self.brand.pk,
+                    "size": self.size.pk,
+                    "quantity": 1,
+                    "refill_price": "800.00",
+                },
+            ),
+            (
+                "/api/gas/exchanges/create_exchange/",
+                {
+                    "location": self.location.pk,
+                    "brand": self.brand.pk,
+                    "size": self.size.pk,
+                    "quantity": 1,
+                    "refill_payment": "800.00",
+                },
+            ),
+            (
+                "/api/gas/sales/create_sale/",
+                {
+                    "location": self.location.pk,
+                    "brand": self.brand.pk,
+                    "size": self.size.pk,
+                    "status": "FULL",
+                    "quantity": 1,
+                    "selling_price": "12000.00",
+                },
+            ),
+        ]
+
+        for endpoint, payload in requests:
+            response = self.client.post(endpoint, payload, format="json")
+            self.assertEqual(response.status_code, 400, response.data)
+            self.assertIn("payment_method", response.data)
+
+        self.assertFalse(GasRefill.objects.exists())
+        self.assertFalse(GasExchange.objects.exists())
+        self.assertFalse(NewCylinderSale.objects.exists())
+        self.assertFalse(GasPayment.objects.exists())
+        self.assertFalse(GasStockMovement.objects.exists())
 
     def test_exchange_records_split_payments_including_tax(self):
         BusinessSettings.objects.create(tax_enabled=True, tax_rate=Decimal("16.00"))
@@ -515,6 +568,7 @@ class GasExchangeTests(TestCase):
                 "size": self.size.pk,
                 "quantity": 1,
                 "refill_price": "900.00",
+                "payment_method": "CASH",
             },
             format="json",
         )
@@ -526,7 +580,7 @@ class GasExchangeTests(TestCase):
         self.assertEqual(refill.customer_brand, customer_brand)
         self.assertEqual(refill.customer_name, "")
         self.assertEqual(refill.customer_phone, "")
-        self.assertEqual(refill.payment_method, "")
+        self.assertEqual(refill.payment_method, "CASH")
         stock.refresh_from_db()
         self.assertEqual(stock.full_quantity, 1)
         self.assertEqual(stock.empty_quantity, 0)
@@ -586,6 +640,7 @@ class GasExchangeTests(TestCase):
                 "quantity": 1,
                 "selling_price": "10000.00",
                 "includes_gas": True,
+                "payment_method": "CASH",
                 "accessory_items": [
                     {"product": accessory.pk, "quantity": 1},
                 ],
@@ -600,7 +655,7 @@ class GasExchangeTests(TestCase):
         self.assertEqual(sale.status, "COMPLETE")
         self.assertEqual(sale.customer_name, "")
         self.assertEqual(sale.customer_phone, "")
-        self.assertEqual(sale.payment_method, "")
+        self.assertEqual(sale.payment_method, "CASH")
         self.assertEqual(sale.accessories_total, Decimal("750.00"))
         self.assertEqual(sale.total_amount, Decimal("10750.00"))
         self.assertEqual(NewCylinderSaleAccessory.objects.count(), 1)
