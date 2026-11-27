@@ -85,7 +85,6 @@ export default function POS() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [productTypeFilter, setProductTypeFilter] = useState("");
   const [brandFilter, setBrandFilter] = useState("");
-  const [openBrowseFilter, setOpenBrowseFilter] = useState("category");
   const [unitFilter, setUnitFilter] = useState("");
   const [inStockOnly, setInStockOnly] = useState(true);
   const [barcode, setBarcode] = useState("");
@@ -593,7 +592,6 @@ export default function POS() {
     setCategoryFilter("");
     setProductTypeFilter("");
     setBrandFilter("");
-    setOpenBrowseFilter("category");
     setUnitFilter("");
     setInStockOnly(true);
     setProducts([]);
@@ -1013,27 +1011,6 @@ export default function POS() {
     }
   };
 
-  const browseFilter = {
-    category: {
-      items: categories,
-      selected: categoryFilter,
-      onChange: setCategoryFilter,
-      allLabel: "All categories",
-    },
-    brand: {
-      items: brands,
-      selected: brandFilter,
-      onChange: setBrandFilter,
-      allLabel: "All brands",
-    },
-    productType: {
-      items: productTypes,
-      selected: productTypeFilter,
-      onChange: setProductTypeFilter,
-      allLabel: "All product types",
-    },
-  }[openBrowseFilter];
-
   return (
     <div className="pos-page space-y-5">
       <div className="no-print">
@@ -1117,90 +1094,33 @@ export default function POS() {
                 className="w-full rounded-lg border border-slate-300 py-3 pl-10 pr-3"
               />
             </div>
-            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <p className="text-sm font-semibold text-slate-700">
-                Browse products by
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {[
-                  ["category", "Category"],
-                  ["brand", "Brand"],
-                  ["productType", "Product type"],
-                ].map(([filter, label]) => {
-                  const selectedValue = filter === "category"
-                    ? categoryFilter
-                    : filter === "brand"
-                      ? brandFilter
-                      : productTypeFilter;
-                  return (
-                    <button
-                      key={filter}
-                      type="button"
-                      onClick={() => setOpenBrowseFilter(
-                        openBrowseFilter === filter ? "" : filter
-                      )}
-                      disabled={loading || isLoadingDraft}
-                      aria-expanded={openBrowseFilter === filter}
-                      className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                        openBrowseFilter === filter
-                          ? "border-blue-600 bg-blue-600 text-white"
-                          : "border-slate-300 bg-white text-slate-700 hover:border-blue-400"
-                      }`}
-                    >
-                      {label}
-                      {selectedValue && (
-                        <span className="ml-1.5 rounded-full bg-white/20 px-1.5 py-0.5 text-xs">
-                          selected
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-              {browseFilter && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => browseFilter.onChange("")}
-                    disabled={loading || isLoadingDraft}
-                    className={`rounded-full border px-3 py-1.5 text-sm ${
-                      !browseFilter.selected
-                        ? "border-blue-600 bg-blue-50 font-semibold text-blue-700"
-                        : "border-slate-300 bg-white text-slate-700"
-                    }`}
-                  >
-                    {browseFilter.allLabel}
-                  </button>
-                  {browseFilter.items.map((item) => {
-                    const selected = String(browseFilter.selected) === String(item.id);
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => browseFilter.onChange(
-                          selected ? "" : String(item.id)
-                        )}
-                        disabled={loading || isLoadingDraft}
-                        aria-pressed={selected}
-                        className={`rounded-full border px-3 py-1.5 text-sm ${
-                          selected
-                            ? "border-blue-600 bg-blue-600 font-semibold text-white"
-                            : "border-slate-300 bg-white text-slate-700 hover:border-blue-400"
-                        }`}
-                      >
-                        {item.name}
-                      </button>
-                    );
-                  })}
-                  {!browseFilter.items.length && (
-                    <p className="py-1 text-sm text-slate-500">
-                      No options configured for this group yet.
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <select
+                value={productTypeFilter}
+                onChange={(event) => setProductTypeFilter(event.target.value)}
+                disabled={loading || isLoadingDraft}
+                className="w-full rounded-lg border border-slate-300 p-3"
+                aria-label="Filter by product type"
+              >
+                <option value="">All product types</option>
+                {productTypes.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={categoryFilter}
+                onChange={(event) => setCategoryFilter(event.target.value)}
+                disabled={loading || isLoadingDraft}
+                className="w-full rounded-lg border border-slate-300 p-3"
+                aria-label="Filter by category"
+              >
+                <option value="">All categories</option>
+                {categories.map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
+                ))}
+              </select>
               <select
                 value={unitFilter}
                 onChange={(event) => setUnitFilter(event.target.value)}
@@ -1213,6 +1133,18 @@ export default function POS() {
                   <option key={item.id} value={item.id}>
                     {item.name} ({item.abbreviation})
                   </option>
+                ))}
+              </select>
+              <select
+                value={brandFilter}
+                onChange={(event) => setBrandFilter(event.target.value)}
+                disabled={loading || isLoadingDraft}
+                className="w-full rounded-lg border border-slate-300 p-3"
+                aria-label="Filter by brand"
+              >
+                <option value="">All brands</option>
+                {brands.map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
                 ))}
               </select>
               <input
