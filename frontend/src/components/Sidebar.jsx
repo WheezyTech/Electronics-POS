@@ -17,6 +17,7 @@ import {
   LockKeyhole,
   Flame,
   Download,
+  MessageCircle,
 } from "lucide-react";
 
 import { useAuth } from "../context/AuthContext";
@@ -24,6 +25,7 @@ import webLogo from "../../assets/branding/Electronics POS Web logo.png";
 
 const navigation = [
   { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER", "ELECTRONICS_CASHIER", "GAS_LPG_CASHIER", "SUPERVISOR"] },
+  { name: "Help & Support", path: "/support", icon: MessageCircle, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER", "ELECTRONICS_CASHIER", "GAS_LPG_CASHIER", "SUPERVISOR", "ACCOUNTANT", "AUDITOR"] },
   { name: "Point of Sale", path: "/pos", icon: ShoppingCart, roles: ["ADMINISTRATOR", "STORE_MANAGER", "CASHIER", "ELECTRONICS_CASHIER", "SUPERVISOR"] },
   { name: "Products", path: "/products", icon: Package, roles: ["ADMINISTRATOR", "STORE_MANAGER"] },
   { name: "Barcodes", path: "/barcodes", icon: Barcode, roles: ["ADMINISTRATOR", "STORE_MANAGER"] },

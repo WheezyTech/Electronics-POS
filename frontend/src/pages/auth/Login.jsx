@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Download, Lock, MonitorDown, Smartphone, UserRound } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import webLogo from "../../../assets/branding/Electronics POS Web logo.png";
@@ -8,6 +8,7 @@ import webLogo from "../../../assets/branding/Electronics POS Web logo.png";
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -21,10 +22,14 @@ export default function Login() {
 
     try {
       const response = await login(username, password);
+      const returnTo = location.state?.from;
       navigate(
-        ["ACCOUNTANT", "AUDITOR"].includes(response.user?.role)
-          ? "/reports"
-          : "/dashboard"
+        returnTo?.pathname?.startsWith("/")
+          ? `${returnTo.pathname}${returnTo.search || ""}${returnTo.hash || ""}`
+          : ["ACCOUNTANT", "AUDITOR"].includes(response.user?.role)
+            ? "/reports"
+            : "/dashboard",
+        { replace: true }
       );
     } catch (err) {
       setError(

@@ -42,7 +42,8 @@ INSTALLED_APPS = [
     'apps.sales.apps.SalesConfig',
     'apps.gas.apps.GasConfig',
     "apps.reports.apps.ReportsConfig",
-    "apps.configuration.apps.ConfigurationConfig"
+    "apps.configuration.apps.ConfigurationConfig",
+    "apps.support.apps.SupportConfig",
 ]
 
 AUTH_USER_MODEL = 'accounts.User'

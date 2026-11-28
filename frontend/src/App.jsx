@@ -37,6 +37,7 @@ import Home from "./pages/public/Home";
 import About from "./pages/public/About";
 import Services from "./pages/public/Services";
 import Contact from "./pages/public/Contact";
+import Support from "./pages/support/Support";
 
 // Electron exposes electronAPI through the preload script.
 const Router = window.electronAPI ? HashRouter : BrowserRouter;
@@ -180,6 +181,7 @@ function App() {
               >
                 <Route path="/reports" element={<Reports />} />
               </Route>
+              <Route path="/support" element={<Support />} />
             </Route>
           </Route>
 
