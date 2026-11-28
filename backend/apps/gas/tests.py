@@ -414,6 +414,97 @@ class GasExchangeTests(TestCase):
             )
         )
 
+    def test_manager_can_convert_cylinders_between_full_and_empty(self):
+        stock = GasStock.objects.create(
+            location=self.location,
+            brand=self.brand,
+            size=self.size,
+            full_quantity=4,
+            empty_quantity=1,
+        )
+
+        response = self.client.post(
+            "/api/gas/stock/convert/",
+            {
+                "location": self.location.pk,
+                "brand": self.brand.pk,
+                "size": self.size.pk,
+                "from_status": "FULL",
+                "quantity": 2,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        stock.refresh_from_db()
+        self.assertEqual((stock.full_quantity, stock.empty_quantity), (2, 3))
+        movements = list(GasStockMovement.objects.all())
+        self.assertEqual(len(movements), 2)
+        self.assertEqual(
+            {(movement.cylinder_status, movement.quantity_delta) for movement in movements},
+            {("FULL", -2), ("EMPTY", 2)},
+        )
+        self.assertEqual(movements[0].reference, movements[1].reference)
+
+    def test_cylinder_conversion_rejects_insufficient_stock(self):
+        stock = GasStock.objects.create(
+            location=self.location,
+            brand=self.brand,
+            size=self.size,
+            full_quantity=1,
+        )
+
+        response = self.client.post(
+            "/api/gas/stock/convert/",
+            {
+                "location": self.location.pk,
+                "brand": self.brand.pk,
+                "size": self.size.pk,
+                "from_status": "FULL",
+                "quantity": 2,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        stock.refresh_from_db()
+        self.assertEqual((stock.full_quantity, stock.empty_quantity), (1, 0))
+        self.assertFalse(GasStockMovement.objects.exists())
+
+    def test_cylinder_conversion_rejects_fractional_quantity(self):
+        response = self.client.post(
+            "/api/gas/stock/convert/",
+            {
+                "location": self.location.pk,
+                "brand": self.brand.pk,
+                "size": self.size.pk,
+                "from_status": "FULL",
+                "quantity": "1.5",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(GasStock.objects.exists())
+
+    def test_cashier_cannot_convert_cylinder_status(self):
+        self.user.role = "CASHIER"
+        self.user.save(update_fields=["role"])
+
+        response = self.client.post(
+            "/api/gas/stock/convert/",
+            {
+                "location": self.location.pk,
+                "brand": self.brand.pk,
+                "size": self.size.pk,
+                "from_status": "FULL",
+                "quantity": 1,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+
     def test_cashier_can_record_exchange(self):
         self.user.role = "CASHIER"
         self.user.save(update_fields=["role"])

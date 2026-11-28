@@ -175,6 +175,7 @@ export default function Gas() {
   const [salesFilter, setSalesFilter] = useState({ location: "", brand: "", size: "", dateFrom: "", dateTo: "" });
   const [receiptSale, setReceiptSale] = useState(null);
   const [selectedGasSale, setSelectedGasSale] = useState(null);
+  const [stockConversion, setStockConversion] = useState(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [brandName, setBrandName] = useState("");
@@ -521,8 +522,43 @@ export default function Gas() {
               <Select required={false} value={stockFilter.size} onChange={(value) => setStockFilter((current) => ({ ...current, size: value }))} label="Filter by size" options={[["", "All sizes"], ...sizes.map((item) => [item.id, item.name])]} />
             </div>
             <button type="button" onClick={load} className="mb-3 inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"><Search size={14}/> Apply stock filters</button>
-            <Table headers={["Location", "Brand", "Size", "Full", "Empty"]}>
-              {stock.map((row) => <tr key={row.id} className="border-t"><td>{row.location_name}</td><td>{row.brand_name}</td><td>{row.size_name}</td><td>{row.full_quantity}</td><td>{row.empty_quantity}</td></tr>)}
+            <Table headers={["Location", "Brand", "Size", "Full", "Empty", ...(canManageGas ? ["Mark cylinders"] : [])]}>
+              {stock.map((row) => (
+                <tr key={row.id} className="border-t">
+                  <td>{row.location_name}</td>
+                  <td>{row.brand_name}</td>
+                  <td>{row.size_name}</td>
+                  <td>{row.full_quantity}</td>
+                  <td>{row.empty_quantity}</td>
+                  {canManageGas && (
+                    <td>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={!row.empty_quantity}
+                          onClick={() => setStockConversion({ row, status: "FULL", quantity: "1" })}
+                          className="rounded-lg border border-emerald-200 px-2 py-1 text-xs font-medium text-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Mark full
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!row.full_quantity}
+                          onClick={() => setStockConversion({ row, status: "EMPTY", quantity: "1" })}
+                          className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Mark empty
+                        </button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))}
+              {!stock.length && (
+                <tr>
+                  <td colSpan={canManageGas ? 6 : 5} className="py-3 text-slate-500">No cylinder stock found.</td>
+                </tr>
+              )}
             </Table>
           </Card>
           <Card title="Recent stock movements">
@@ -939,6 +975,67 @@ export default function Gas() {
           sale={receiptSale}
           onClose={() => setReceiptSale(null)}
         />
+      )}
+      {stockConversion && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="stock-conversion-title"
+            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"
+          >
+            <h2 id="stock-conversion-title" className="text-lg font-bold text-slate-900">
+              Mark cylinders {stockConversion.status.toLowerCase()}
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              {stockConversion.row.brand_name} · {stockConversion.row.size_name} · {stockConversion.row.location_name}
+            </p>
+            <p className="mt-2 text-sm text-slate-600">
+              Available to mark {stockConversion.status.toLowerCase()}:{" "}
+              {stockConversion.status === "FULL"
+                ? stockConversion.row.empty_quantity
+                : stockConversion.row.full_quantity}
+            </p>
+            <form
+              className="mt-4"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                const result = await create("/gas/stock/convert/", {
+                  location: stockConversion.row.location,
+                  brand: stockConversion.row.brand,
+                  size: stockConversion.row.size,
+                  from_status: stockConversion.status === "FULL" ? "EMPTY" : "FULL",
+                  quantity: Number(stockConversion.quantity),
+                }, "Cylinder stock status updated.");
+                if (result) setStockConversion(null);
+              }}
+            >
+              <Input
+                label="Quantity"
+                type="number"
+                min="1"
+                step="1"
+                value={stockConversion.quantity}
+                onChange={(value) => setStockConversion((current) => ({ ...current, quantity: value }))}
+              />
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setStockConversion(null)}
+                  className="rounded-lg border px-4 py-2 text-sm font-medium text-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800"
+                >
+                  Mark {stockConversion.status.toLowerCase()}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
       {selectedGasSale && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 p-4">

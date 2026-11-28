@@ -1,5 +1,5 @@
 import uuid
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
 from django.db.models import F, Sum
@@ -203,6 +203,91 @@ class StockViewSet(viewsets.ReadOnlyModelViewSet):
             if value:
                 queryset = queryset.filter(**{f"{field}_id": value})
         return queryset
+
+    @action(detail=False, methods=["post"])
+    @transaction.atomic
+    def convert(self, request):
+        user = request.user
+        if not (
+            user.is_superuser
+            or getattr(user, "role", "") in {"ADMINISTRATOR", "STORE_MANAGER"}
+        ):
+            raise PermissionDenied(
+                "Only administrators and store managers can change cylinder status."
+            )
+
+        data = request.data
+        try:
+            from apps.inventory.models import StockLocation
+
+            location = StockLocation.objects.get(pk=data["location"])
+            brand = GasBrand.objects.get(pk=data["brand"])
+            size = GasCylinderSize.objects.get(pk=data["size"])
+            from_status = str(data["from_status"]).upper()
+            quantity_value = Decimal(str(data["quantity"]))
+        except (KeyError, ValueError, TypeError, StockLocation.DoesNotExist,
+                GasBrand.DoesNotExist, GasCylinderSize.DoesNotExist,
+                InvalidOperation):
+            raise ValidationError(
+                "Location, brand, size, source status and a valid quantity are required."
+            )
+
+        if from_status not in {"FULL", "EMPTY"}:
+            raise ValidationError("Source status must be FULL or EMPTY.")
+        if not quantity_value.is_finite() or quantity_value != quantity_value.to_integral_value():
+            raise ValidationError("Quantity must be a whole number.")
+        quantity = int(quantity_value)
+        if quantity <= 0:
+            raise ValidationError("Enter a quantity greater than zero.")
+
+        stock = GasStock.objects.select_for_update().filter(
+            location=location,
+            brand=brand,
+            size=size,
+        ).first()
+        available = (
+            getattr(stock, "full_quantity" if from_status == "FULL" else "empty_quantity")
+            if stock
+            else 0
+        )
+        if quantity > available:
+            raise ValidationError(
+                f"Cannot mark {quantity} cylinders {from_status.lower()}. "
+                f"Only {available} are available."
+            )
+
+        to_status = "EMPTY" if from_status == "FULL" else "FULL"
+        tx_reference = reference("GSC")
+        notes = f"Cylinder status changed from {from_status} to {to_status}."
+        change_gas_stock(
+            location=location,
+            brand=brand,
+            size=size,
+            cylinder_status=from_status,
+            quantity_delta=-quantity,
+            movement_type=GasStockMovement.MovementType.ADJUSTMENT,
+            performed_by=user,
+            reference_value=tx_reference,
+            notes=notes,
+        )
+        stock = change_gas_stock(
+            location=location,
+            brand=brand,
+            size=size,
+            cylinder_status=to_status,
+            quantity_delta=quantity,
+            movement_type=GasStockMovement.MovementType.ADJUSTMENT,
+            performed_by=user,
+            reference_value=tx_reference,
+            notes=notes,
+        )
+        return Response(
+            {
+                "reference": tx_reference,
+                "stock": GasStockSerializer(stock).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=False, methods=["post"])
     @transaction.atomic
