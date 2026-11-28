@@ -28,6 +28,28 @@ const paymentOptions = [
   ["CARD", "Card"],
   ["OTHER", "Other"],
 ];
+const transactionPaymentMethods = (transaction) => transaction.payments?.length
+  ? transaction.payments.map((payment) => payment.payment_method)
+  : transaction.payment_method
+    ? [transaction.payment_method]
+    : [];
+const PaymentMethodBadges = ({ transaction }) => {
+  const methods = transactionPaymentMethods(transaction);
+  return (
+    <div className="flex flex-wrap gap-1">
+      {methods.length
+        ? methods.map((method, index) => (
+            <span
+              key={`${method}-${index}`}
+              className="rounded bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600"
+            >
+              {method}
+            </span>
+          ))
+        : <span className="text-xs text-slate-400">—</span>}
+    </div>
+  );
+};
 const getAmountDue = (subtotal, settings) => {
   const amount = Number(subtotal || 0);
   if (!settings?.tax_enabled || settings.prices_include_tax) return amount;
@@ -772,7 +794,7 @@ export default function Gas() {
       {tab === "purchase" && (
         <Card title="Record gas purchase">
           <p className="mb-4 text-sm text-slate-600">
-            Receive full cylinders from the supplier. When empty cylinders are returned to the supplier, their quantity is automatically removed from empty stock. Full stock increases and cannot become negative.
+            To exchange your empty cylinders for refilled ones from the company, record both quantities here. Full cylinders received increase full stock, and empty cylinders returned decrease empty stock (for example, receive 10 full and return 8 empty).
           </p>
           <form onSubmit={(e) => { e.preventDefault(); create("/gas/purchases/create_purchase/", purchase, "Gas purchase recorded."); }} className="grid gap-3 md:grid-cols-3">
             <Select value={purchase.location} onChange={(v) => setPurchase({...purchase, location: v})} label="Destination" options={locations.map(x => [x.id, x.name])}/>
@@ -865,21 +887,21 @@ export default function Gas() {
               </div>
             </Card>
           <Card title={`Refills · ${refills.length}`}>
-            <Table headers={["Date", "Reference", "Cashier", "Location", "Brand", "Size", "Quantity", "Tax", "Amount", "Actions"]}>
-              {refills.map((item) => <tr key={item.id} className="border-t"><td>{dateTimeMillis(item.created_at)}</td><td>{item.reference}</td><td>{item.recorded_by_name || "—"}</td><td>{item.location_name}</td><td>{item.brand_name}</td><td>{item.size_name}</td><td>{item.quantity}</td><td>{money(item.tax_amount)}</td><td>{money(item.tax_included ? item.total_amount : Number(item.total_amount) + Number(item.tax_amount || 0))}</td><td><div className="flex items-center gap-2"><button type="button" onClick={() => setSelectedGasSale({ type: "REFILL", data: item })} className="inline-flex items-center gap-1 text-blue-700"><Eye size={14}/> View</button><button type="button" onClick={() => setReceiptSale(buildGasReceipt(item, "GAS REFILL"))} className="inline-flex items-center gap-1 text-slate-700"><Printer size={14}/> Print</button></div></td></tr>)}
-              {!refills.length && <tr><td colSpan="10" className="py-3 text-slate-500">No refills found</td></tr>}
+            <Table headers={["Date", "Reference", "Cashier", "Location", "Brand", "Size", "Quantity", "Tax", "Payment method", "Amount", "Actions"]}>
+              {refills.map((item) => <tr key={item.id} className="border-t"><td>{dateTimeMillis(item.created_at)}</td><td>{item.reference}</td><td>{item.recorded_by_name || "—"}</td><td>{item.location_name}</td><td>{item.brand_name}</td><td>{item.size_name}</td><td>{item.quantity}</td><td>{money(item.tax_amount)}</td><td><PaymentMethodBadges transaction={item} /></td><td>{money(item.tax_included ? item.total_amount : Number(item.total_amount) + Number(item.tax_amount || 0))}</td><td><div className="flex items-center gap-2"><button type="button" onClick={() => setSelectedGasSale({ type: "REFILL", data: item })} className="inline-flex items-center gap-1 text-blue-700"><Eye size={14}/> View</button><button type="button" onClick={() => setReceiptSale(buildGasReceipt(item, "GAS REFILL"))} className="inline-flex items-center gap-1 text-slate-700"><Printer size={14}/> Print</button></div></td></tr>)}
+              {!refills.length && <tr><td colSpan="11" className="py-3 text-slate-500">No refills found</td></tr>}
             </Table>
           </Card>
           <Card title={`Cylinder exchanges · ${exchanges.length}`}>
-            <Table headers={["Date", "Reference", "Cashier", "Location", "Brand", "Size", "Quantity", "Tax", "Payment", "Actions"]}>
-              {exchanges.map((item) => <tr key={item.id} className="border-t"><td>{dateTimeMillis(item.created_at)}</td><td>{item.reference}</td><td>{item.recorded_by_name || "—"}</td><td>{item.location_name}</td><td>{item.brand_name}</td><td>{item.size_name}</td><td>{item.quantity}</td><td>{money(item.tax_amount)}</td><td>{money(item.tax_included ? item.refill_payment : Number(item.refill_payment) + Number(item.tax_amount || 0))}</td><td><div className="flex items-center gap-2"><button type="button" onClick={() => setSelectedGasSale({ type: "EXCHANGE", data: item })} className="inline-flex items-center gap-1 text-blue-700"><Eye size={14}/> View</button><button type="button" onClick={() => setReceiptSale(buildGasReceipt(item, "CYLINDER EXCHANGE"))} className="inline-flex items-center gap-1 text-slate-700"><Printer size={14}/> Print</button></div></td></tr>)}
-              {!exchanges.length && <tr><td colSpan="10" className="py-3 text-slate-500">No exchanges found</td></tr>}
+            <Table headers={["Date", "Reference", "Cashier", "Location", "Brand", "Size", "Quantity", "Tax", "Amount", "Payment method", "Actions"]}>
+              {exchanges.map((item) => <tr key={item.id} className="border-t"><td>{dateTimeMillis(item.created_at)}</td><td>{item.reference}</td><td>{item.recorded_by_name || "—"}</td><td>{item.location_name}</td><td>{item.brand_name}</td><td>{item.size_name}</td><td>{item.quantity}</td><td>{money(item.tax_amount)}</td><td>{money(item.tax_included ? item.refill_payment : Number(item.refill_payment) + Number(item.tax_amount || 0))}</td><td><PaymentMethodBadges transaction={item} /></td><td><div className="flex items-center gap-2"><button type="button" onClick={() => setSelectedGasSale({ type: "EXCHANGE", data: item })} className="inline-flex items-center gap-1 text-blue-700"><Eye size={14}/> View</button><button type="button" onClick={() => setReceiptSale(buildGasReceipt(item, "CYLINDER EXCHANGE"))} className="inline-flex items-center gap-1 text-slate-700"><Printer size={14}/> Print</button></div></td></tr>)}
+              {!exchanges.length && <tr><td colSpan="11" className="py-3 text-slate-500">No exchanges found</td></tr>}
             </Table>
           </Card>
           <Card title={`Cylinder sales · ${gasSales.length}`}>
-            <Table headers={["Date", "Reference", "Cashier", "Location", "Brand", "Size", "Status", "Quantity", "Tax", "Amount", "Actions"]}>
-              {gasSales.map((item) => <tr key={item.id} className="border-t"><td>{dateTimeMillis(item.created_at)}</td><td>{item.reference}</td><td>{item.recorded_by_name || "—"}</td><td>{item.location_name}</td><td>{item.brand_name}</td><td>{item.size_name}</td><td>{item.status}</td><td>{item.quantity}</td><td>{money(item.tax_amount)}</td><td>{money(item.tax_included ? item.total_amount : Number(item.total_amount) + Number(item.tax_amount || 0))}</td><td><div className="flex items-center gap-2"><button type="button" onClick={() => setSelectedGasSale({ type: "CYLINDER SALE", data: item })} className="inline-flex items-center gap-1 text-blue-700"><Eye size={14}/> View</button><button type="button" onClick={() => setReceiptSale(buildGasReceipt(item, `${item.status} CYLINDER SALE`))} className="inline-flex items-center gap-1 text-slate-700"><Printer size={14}/> Print</button></div></td></tr>)}
-              {!gasSales.length && <tr><td colSpan="11" className="py-3 text-slate-500">No cylinder sales found</td></tr>}
+            <Table headers={["Date", "Reference", "Cashier", "Location", "Brand", "Size", "Status", "Quantity", "Tax", "Amount", "Payment method", "Actions"]}>
+              {gasSales.map((item) => <tr key={item.id} className="border-t"><td>{dateTimeMillis(item.created_at)}</td><td>{item.reference}</td><td>{item.recorded_by_name || "—"}</td><td>{item.location_name}</td><td>{item.brand_name}</td><td>{item.size_name}</td><td>{item.status}</td><td>{item.quantity}</td><td>{money(item.tax_amount)}</td><td>{money(item.tax_included ? item.total_amount : Number(item.total_amount) + Number(item.tax_amount || 0))}</td><td><PaymentMethodBadges transaction={item} /></td><td><div className="flex items-center gap-2"><button type="button" onClick={() => setSelectedGasSale({ type: "CYLINDER SALE", data: item })} className="inline-flex items-center gap-1 text-blue-700"><Eye size={14}/> View</button><button type="button" onClick={() => setReceiptSale(buildGasReceipt(item, `${item.status} CYLINDER SALE`))} className="inline-flex items-center gap-1 text-slate-700"><Printer size={14}/> Print</button></div></td></tr>)}
+              {!gasSales.length && <tr><td colSpan="12" className="py-3 text-slate-500">No cylinder sales found</td></tr>}
             </Table>
           </Card>
         </div>
